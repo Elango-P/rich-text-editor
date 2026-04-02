@@ -1,11 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { FaImage, FaArrowDown, FaBold, FaItalic, FaUnderline, FaTextHeight, FaAlignCenter, FaAlignRight, FaAlignJustify, FaAlignLeft, FaListOl, FaListUl, FaFonticons, FaFont, FaLink } from "react-icons/fa";
-import { getRandomId } from "../lib/Helper";
-import ObjectName from "../helpers/ObjectName";
-import Media from "../helpers/Media";
-import MediaUpload from "../helpers/MediaUpload";
+import { FaImage, FaBold, FaItalic, FaUnderline, FaTextHeight, FaAlignCenter, FaAlignRight, FaAlignJustify, FaAlignLeft, FaListOl, FaListUl, FaFont } from "./icons";
+import { draftBlocksToHTML, isValidDraftFormat } from "./utils";
 import Spinner from "./Spinner";
-import { draftBlocksToHTML, isValidDraftFormat } from "../lib/draftJsToHtml";
 import LabelComponent from "./Label";
 
 // Helper functions for HTML escaping
@@ -29,6 +25,7 @@ export default function RichTextEditor({
   showEditButton,
   onBlur,
   disabled = false,
+  editable: defaultEditable = false,
   value,
   isLoading,
   isList = false,
@@ -37,6 +34,7 @@ export default function RichTextEditor({
   paddingLeft,
   minHeight,
   maxHeight,
+  onImageUpload,
 }) {
 
   if (isLoading) {
@@ -52,7 +50,7 @@ export default function RichTextEditor({
   const [linkUrl, setLinkUrl] = useState("");
   const [linkText, setLinkText] = useState("");
   const selectionRangeRef = useRef(null);
-  const [editable, setEditable] = useState(false);
+  const [editable, setEditable] = useState(defaultEditable);
 
   // NEW: Track current list type for dropdown
   const [currentListType, setCurrentListType] = useState(null);
@@ -593,17 +591,15 @@ export default function RichTextEditor({
         const file = item.getAsFile();
         if (file) {
           setIsUploading(true);
-          const objectId = getRandomId();
-          const mediaParams = {
-            selectedFile: file,
-            objectId,
-            ObjectName: ObjectName.COMMENT,
-            visiblity: Media.VISIBILITY_PUBLIC,
-          };
+          const uploadPromise = onImageUpload
+            ? onImageUpload(file)
+            : readFileAsDataURL(file);
 
-          MediaUpload.uploadFile(mediaParams, (res) => {
-            if (res?.mediaUrl) {
-              insertImage(res.mediaUrl, file.name || 'pasted-image');
+          uploadPromise.then((url) => {
+            if (url) {
+              // if the user's onImageUpload resolves to `{ mediaUrl: '...' }` like the previous MediaUpload, handle it
+              const finalUrl = typeof url === 'object' && url !== null && url.mediaUrl ? url.mediaUrl : url;
+              insertImage(finalUrl, file.name || 'pasted-image');
             }
             setIsUploading(false);
           }).catch((error) => {
@@ -665,18 +661,18 @@ export default function RichTextEditor({
     for (const file of imageFiles) {
       try {
         setIsUploading(true);
-        const objectId = getRandomId();
-        const mediaParams = {
-          selectedFile: file,
-          objectId,
-          ObjectName: ObjectName.COMMENT,
-          visiblity: Media.VISIBILITY_PUBLIC,
-        };
+        const uploadPromise = onImageUpload
+          ? onImageUpload(file)
+          : readFileAsDataURL(file);
 
-        MediaUpload.uploadFile(mediaParams, (res) => {
-          if (res?.mediaUrl) {
-            insertImage(res.mediaUrl, file.name);
+        uploadPromise.then((url) => {
+          if (url) {
+            const finalUrl = typeof url === 'object' && url !== null && url.mediaUrl ? url.mediaUrl : url;
+            insertImage(finalUrl, file.name);
           }
+          setIsUploading(false);
+        }).catch((error) => {
+          console.error('Error processing image:', error);
           setIsUploading(false);
         });
       } catch (error) {
@@ -817,11 +813,13 @@ export default function RichTextEditor({
   }, [exec, triggerChange]);
 
   const confirmLink = () => {
-    if (!linkUrl) {
-      setLinkModalOpen(false);
-      return;
+    // Add protocol if missing
+    let url = linkUrl.trim();
+    if (url && !/^(https?:\/\/|mailto:|tel:)/i.test(url)) {
+      url = `https://${url}`;
     }
-    const safeUrl = escapeAttr(linkUrl);
+
+    const safeUrl = escapeAttr(url);
     const safeText = escapeHtml(linkText || linkUrl);
 
     const sel = window.getSelection();
@@ -852,46 +850,73 @@ export default function RichTextEditor({
     if (!value) return;
 
     const sel = window.getSelection();
-    if (!sel.rangeCount) return;
+    if (!sel || !sel.rangeCount) return;
 
-    // Save the current selection
     const range = sel.getRangeAt(0);
+    const editor = editorRef.current;
+    if (!editor) return;
 
-    // Check if selection spans multiple elements (like in select all)
-    const isMultiElementSelection = !range.collapsed &&
-      (range.toString().length > 0 || range.startContainer !== range.endContainer);
+    const walker = document.createTreeWalker(
+      editor,
+      NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: (node) => {
+          return range.intersectsNode(node)
+            ? NodeFilter.FILTER_ACCEPT
+            : NodeFilter.FILTER_REJECT;
+        },
+      },
+      false
+    );
 
-    if (isMultiElementSelection) {
-      // For multi-element selection, wrap in a div with the line height
-      const span = document.createElement('div');
-      span.style.lineHeight = value;
+    let node;
+    const blocksToStyle = new Set();
+    const blockTags = ['P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'BLOCKQUOTE'];
 
-      try {
-        // Extract the selected content
-        const fragment = range.extractContents();
+    const tempRange = range.cloneRange();
 
-        // Apply line height to all block elements in the selection
-        const blocks = fragment.querySelectorAll('div, p, h1, h2, h3, h4, h5, h6, li');
-        if (blocks.length > 0) {
-          blocks.forEach(block => {
-            block.style.lineHeight = value;
-          });
-          // Insert the modified content back
-          range.deleteContents();
-          range.insertNode(fragment);
-        } else {
-          // If no block elements, wrap in a div with line height
-          span.appendChild(fragment);
-          range.insertNode(span);
+    while ((node = walker.nextNode())) {
+      if (node.nodeType === 1 && blockTags.includes(node.tagName)) {
+        blocksToStyle.add(node);
+      } else if (node.nodeType === 3) {
+        let parent = node.parentNode;
+        while (parent && parent !== editor && !blockTags.includes(parent.tagName)) {
+          parent = parent.parentNode;
         }
-      } catch (e) {
-        console.error("Error applying line height:", e);
+        if (parent && parent !== editor && blockTags.includes(parent.tagName)) {
+          blocksToStyle.add(parent);
+        }
       }
-    } else {
-      // For single element or cursor position, use execCommand
-      document.execCommand('styleWithCSS', false, true);
-      document.execCommand('lineHeight', false, value);
     }
+
+    if (blocksToStyle.size > 0) {
+      blocksToStyle.forEach(block => {
+        block.style.lineHeight = value;
+      });
+    } else {
+      let common = range.commonAncestorContainer;
+      if (common.nodeType === 3) common = common.parentNode;
+
+      while (common && common !== editor && !blockTags.includes(common.tagName)) {
+        common = common.parentNode;
+      }
+
+      if (common && common !== editor) {
+        common.style.lineHeight = value;
+      } else if (editor) {
+        document.execCommand('formatBlock', false, 'div');
+        let newCommon = window.getSelection().getRangeAt(0).commonAncestorContainer;
+        if (newCommon.nodeType === 3) newCommon = newCommon.parentNode;
+        if (newCommon && newCommon !== editor) {
+          newCommon.style.lineHeight = value;
+        }
+      }
+    }
+
+    try {
+      sel.removeAllRanges();
+      sel.addRange(tempRange);
+    } catch (e) { }
 
     setCurrentLineHeight(value);
     triggerChange();
@@ -1014,20 +1039,20 @@ export default function RichTextEditor({
 
     try {
       setIsUploading(true);
-      const objectId = getRandomId();
-      const mediaParams = {
-        selectedFile: file,
-        objectId,
-        ObjectName: ObjectName.COMMENT,
-        visiblity: Media.VISIBILITY_PUBLIC,
-      };
+      const uploadPromise = onImageUpload
+        ? onImageUpload(file)
+        : readFileAsDataURL(file);
 
-      MediaUpload.uploadFile(mediaParams, (res) => {
-        if (res?.mediaUrl) {
-          insertImage(res.mediaUrl, file.name);
+      uploadPromise.then((url) => {
+        if (url) {
+          const finalUrl = typeof url === 'object' && url !== null && url.mediaUrl ? url.mediaUrl : url;
+          insertImage(finalUrl, file.name);
         }
         setIsUploading(false);
         e.target.value = null;
+      }).catch((error) => {
+        console.error('Error uploading image:', error);
+        setIsUploading(false);
       });
     } catch (error) {
       console.error('Error uploading image:', error);
@@ -1046,10 +1071,10 @@ export default function RichTextEditor({
     const clickedLink = e.target.closest('a');
 
     if (clickedLink) {
-      // Ensure the link opens in a new tab
-      clickedLink.target = '_blank';
-      clickedLink.rel = 'noopener noreferrer';
-      return; // Let the default link behavior happen
+      e.preventDefault();
+      e.stopPropagation();
+      window.open(clickedLink.href, '_blank');
+      return;
     }
 
     // If disabled is true, prevent editing
@@ -1073,7 +1098,7 @@ export default function RichTextEditor({
     <div>
       <LabelComponent>{label ? label : ""}</LabelComponent>
       <div
-        className={!showBorder ? "" : "border rounded bg-white p-3"}
+        className={!showBorder ? "" : "border border-gray-200 rounded-xl bg-white shadow-sm transition-all duration-200 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent"}
         onClick={handleEditorClick}
         onDrop={handleDrop}
         onDragOver={(e) => {
@@ -1083,10 +1108,11 @@ export default function RichTextEditor({
       >
         {/* Toolbar */}
         {editable &&
-          <div className={!showBorder ? "" : "flex flex-wrap gap-2 mb-3 items-center border p-2 "} >
+          <div className={!showBorder ? "" : "flex flex-wrap gap-1 mb-2 items-center border-b border-gray-100 p-2 bg-gray-50/50 rounded-t-xl"} >
             {/* Bold */}
             <button
               type="button"
+              title="Bold"
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -1094,15 +1120,16 @@ export default function RichTextEditor({
                 triggerChange();
                 focus();
               }}
-              className={`h-8 w-8 flex items-center justify-center rounded ${isBold ? "bg-blue-100" : "hover:bg-gray-100"
+              className={`h-9 w-9 flex items-center justify-center rounded-lg transition-colors ${isBold ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-200"
                 }`}
             >
-              <FaBold />
+              <FaBold size={16} />
             </button>
 
             {/* Italic */}
             <button
               type="button"
+              title="Italic"
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -1110,15 +1137,16 @@ export default function RichTextEditor({
                 triggerChange();
                 focus();
               }}
-              className={`h-8 w-8 flex items-center justify-center rounded ${isItalic ? "bg-blue-100" : "hover:bg-gray-100"
+              className={`h-9 w-9 flex items-center justify-center rounded-lg transition-colors ${isItalic ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-200"
                 }`}
             >
-              <FaItalic />
+              <FaItalic size={16} />
             </button>
 
             {/* Underline */}
             <button
               type="button"
+              title="Underline"
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -1126,10 +1154,10 @@ export default function RichTextEditor({
                 triggerChange();
                 focus();
               }}
-              className={`h-8 w-8 flex items-center justify-center rounded ${isUnderline ? "bg-blue-100" : "hover:bg-gray-100"
+              className={`h-9 w-9 flex items-center justify-center rounded-lg transition-colors ${isUnderline ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-200"
                 }`}
             >
-              <FaUnderline />
+              <FaUnderline size={16} />
             </button>
 
             {/* Font Size */}
@@ -1181,91 +1209,91 @@ export default function RichTextEditor({
             {/* Alignment */}
             <button
               type="button"
-              className={`h-8 w-8 flex items-center justify-center rounded border ${activeAlign === "left"
-                ? "bg-blue-200 border-blue-500"
-                : "bg-gray-100 border-gray-300"
-                } hover:bg-blue-100 hover:border-blue-500`}
+              title="Align Left"
+              className={`h-9 w-9 flex items-center justify-center rounded-lg transition-colors ${activeAlign === "left"
+                ? "bg-blue-100 text-blue-700"
+                : "text-gray-600 hover:bg-gray-200"
+                }`}
               onMouseDown={(e) => {
                 e.preventDefault();
                 exec("justifyLeft");
                 setActiveAlign("left");
               }}
             >
-              <FaAlignLeft className="ml-1" />
+              <FaAlignLeft size={16} />
             </button>
 
             <button
               type="button"
-              className={`h-8 w-8 flex items-center justify-center rounded border ${activeAlign === "center"
-                ? "bg-blue-200 border-blue-500"
-                : "bg-gray-100 border-gray-300"
-                } hover:bg-blue-100 hover:border-blue-500`}
+              title="Align Center"
+              className={`h-9 w-9 flex items-center justify-center rounded-lg transition-colors ${activeAlign === "center"
+                ? "bg-blue-100 text-blue-700"
+                : "text-gray-600 hover:bg-gray-200"
+                }`}
               onMouseDown={(e) => {
                 e.preventDefault();
                 exec("justifyCenter");
                 setActiveAlign("center");
               }}
             >
-              <FaAlignCenter className="ml-1" />
+              <FaAlignCenter size={16} />
             </button>
 
             <button
               type="button"
-              className={`h-8 w-8 flex items-center justify-center rounded border ${activeAlign === "right"
-                ? "bg-blue-200 border-blue-500"
-                : "bg-gray-100 border-gray-300"
-                } hover:bg-blue-100 hover:border-blue-500`}
+              title="Align Right"
+              className={`h-9 w-9 flex items-center justify-center rounded-lg transition-colors ${activeAlign === "right"
+                ? "bg-blue-100 text-blue-700"
+                : "text-gray-600 hover:bg-gray-200"
+                }`}
               onMouseDown={(e) => {
                 e.preventDefault();
                 exec("justifyRight");
                 setActiveAlign("right");
               }}
             >
-              <FaAlignRight className="ml-1" />
+              <FaAlignRight size={16} />
             </button>
 
             <button
               type="button"
-              className={`h-8 w-8 flex items-center justify-center rounded border ${activeAlign === "justify"
-                ? "bg-blue-200 border-blue-500"
-                : "bg-gray-100 border-gray-300"
-                } hover:bg-blue-100 hover:border-blue-500`}
+              title="Justify"
+              className={`h-9 w-9 flex items-center justify-center rounded-lg transition-colors ${activeAlign === "justify"
+                ? "bg-blue-100 text-blue-700"
+                : "text-gray-600 hover:bg-gray-200"
+                }`}
               onMouseDown={(e) => {
                 e.preventDefault();
                 exec("justifyFull");
                 setActiveAlign("justify");
               }}
             >
-              <FaAlignJustify className="ml-1" />
+              <FaAlignJustify size={16} />
             </button>
 
             <button
               type="button"
-              style={{
-                backgroundColor:
-                  currentListType === "unordered" ? "#dbeafe" : undefined,
-              }}
+              title="Unordered List"
               onMouseDown={(e) => {
                 e.preventDefault();
                 handleSelect("unordered");
               }}
-              className="h-8 w-8 flex items-center justify-center rounded border border-gray-300 bg-gray-100 hover:bg-blue-100 hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={`h-9 w-9 flex items-center justify-center rounded-lg transition-colors ${currentListType === "unordered" ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-200"
+                }`}
             >
-              <FaListOl className="ml-1" />
+              <FaListUl size={16} />
             </button>
             <button
               type="button"
-              style={{
-                backgroundColor:
-                  currentListType === "ordered" ? "#dbeafe" : undefined,
-              }}
+              title="Ordered List"
               onMouseDown={(e) => {
                 e.preventDefault();
                 handleSelect("ordered");
               }}
-              className="h-8 w-8 flex items-center justify-center rounded border border-gray-300 bg-gray-100 hover:bg-blue-100 hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={`h-9 w-9 flex items-center justify-center rounded-lg transition-colors ${currentListType === "ordered" ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-200"
+                }`}
             >
-              <FaListUl className="ml-1" />
+              <FaListOl size={16} />
             </button>
             {/* Line Height */}
             <div className="relative flex items-center ml-2">
@@ -1298,13 +1326,14 @@ export default function RichTextEditor({
 
             <button
               type="button"
-              className="h-8 px-4 w-12 flex items-center justify-center rounded border border-gray-300 bg-gray-100 hover:bg-blue-100 hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              title="Add Link"
+              className="h-9 w-9 flex items-center justify-center rounded-lg text-gray-600 hover:bg-gray-200 transition-colors"
               onMouseDown={(e) => {
                 e.preventDefault();
                 addLink();
               }}
             >
-              Link
+              <span style={{ fontSize: '18px' }}>🔗</span>
             </button>
 
             <input
@@ -1317,7 +1346,7 @@ export default function RichTextEditor({
             />
             <button
               type="button"
-              className="h-8 w-8 flex items-center justify-center rounded border border-gray-300 bg-gray-100 hover:bg-blue-100 hover:border-blue-500"
+              className="h-9 w-9 flex items-center justify-center rounded-lg text-gray-600 hover:bg-gray-200 transition-colors"
               onMouseDown={(e) => {
                 e.preventDefault();
                 if (!isUploading) fileInputRef.current?.click();
@@ -1328,7 +1357,7 @@ export default function RichTextEditor({
               {isUploading ? (
                 <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
               ) : (
-                <FaImage size={20} color="black" />
+                <FaImage size={18} />
               )}
             </button>
           </div>
@@ -1341,6 +1370,8 @@ export default function RichTextEditor({
           onInput={handleInput}
           onPaste={handlePaste}
           onDrop={handleDrop}
+          onDragStart={(e) => e.preventDefault()}
+          onDragOver={(e) => e.preventDefault()}
           onKeyDown={handleKeyDown}
           onClick={handleEditorClick}
           style={{
@@ -1353,7 +1384,7 @@ export default function RichTextEditor({
             overflowY: "auto",
             maxHeight: maxHeight ? maxHeight : "500px"
           }}
-          className="scrollbar-hide"
+          className="scrollbar-hide [&_ul]:list-disc [&_ul]:ml-5 [&_ol]:list-decimal [&_ol]:ml-5"
         />
 
 
@@ -1364,7 +1395,8 @@ export default function RichTextEditor({
             style={{
               position: "fixed",
               inset: 0,
-              backgroundColor: "rgba(0,0,0,0.3)",
+              backgroundColor: "rgba(0,0,0,0.4)",
+              backdropFilter: "blur(4px)",
               display: "flex",
               justifyContent: "center",
               alignItems: "center",
@@ -1374,45 +1406,47 @@ export default function RichTextEditor({
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              style={{
-                background: "white",
-                padding: 20,
-                borderRadius: 8,
-                minWidth: "25%",
-                display: "flex",
-                flexDirection: "column",
-                gap: 12,
-              }}
+              className="bg-white p-6 rounded-2xl shadow-2xl min-w-[320px] flex flex-col gap-4 border border-gray-100 animate-in fade-in zoom-in duration-200"
             >
-              <label>
-                URL:
+              <h3 className="text-lg font-semibold text-gray-800">Insert Link</h3>
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-gray-600">URL</label>
                 <input
                   type="url"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
                   value={linkUrl}
                   onChange={(e) => setLinkUrl(e.target.value)}
                   autoFocus
-                  style={{ width: "100%" }}
                   placeholder="https://example.com"
                 />
-              </label>
-              <label>
-                Text:
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-gray-600">Display Text</label>
                 <input
                   type="text"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
                   value={linkText}
                   onChange={(e) => setLinkText(e.target.value)}
-                  style={{ width: "100%" }}
                   placeholder="Link text"
                 />
-              </label>
+              </div>
 
               <div
-                style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}
+                style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}
               >
                 <button
-                  type="button" className="bg-red-600 hover:bg-red-600 px-4 py-1 rounded text-white" onClick={cancelLink}>Cancel</button>
+                  type="button" 
+                  className="px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors font-medium" 
+                  onClick={cancelLink}
+                >
+                  Cancel
+                </button>
                 <button
-                  type="button" className="bg-green-600 hover:bg-green-600 px-4 py-1 text-white rounded" onClick={confirmLink} disabled={!linkUrl}>
+                  type="button" 
+                  className="bg-blue-600 hover:bg-blue-700 px-6 py-2 text-white rounded-lg transition-colors font-medium shadow-sm disabled:opacity-50 disabled:cursor-not-allowed" 
+                  onClick={confirmLink} 
+                  disabled={!linkUrl}
+                >
                   Insert
                 </button>
               </div>
