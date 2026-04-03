@@ -1,6 +1,6 @@
 {
   "name": "react-lite-rich-text",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "type": "module",
   "description": "A React rich text editor with formatting, image upload, and link support",
   "main": "dist/index.cjs.js",

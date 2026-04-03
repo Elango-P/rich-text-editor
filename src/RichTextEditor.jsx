@@ -444,10 +444,11 @@ export default function RichTextEditor({
         margin: ${align === 'center' ? '24px auto' : '15px'};
         vertical-align: top;
         background: #f9fafb;
-        border-radius: 8px;
+        border-radius: 12px;
         box-sizing: border-box;
         max-width: 100%;
-        width: fit-content;
+        width: ${align === 'center' ? '100%' : '350px'};
+        height: 300px;
         ${align === 'left' ? 'float: left; margin-right: 24px;' : ''}
         ${align === 'right' ? 'float: right; margin-left: 24px;' : ''}
         ${align === 'center' ? 'clear: both; text-align: center;' : ''}
@@ -457,13 +458,13 @@ export default function RichTextEditor({
       `;
 
       img.style.cssText = `
-        max-width: 100%;
-        max-height: 450px;
-        height: auto;
+        width: 100%;
+        height: 100%;
         display: block;
         margin: 0 auto;
         object-fit: contain;
-        border-radius: 6px;
+        border-radius: 8px;
+        background: #ffffff;
       `;
       img.setAttribute('data-align', align);
       img.dataset.hasDeleteButton = "true";
