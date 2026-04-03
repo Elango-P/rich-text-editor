@@ -441,29 +441,29 @@ export default function RichTextEditor({
       wrapper.style.cssText = `
         position: relative;
         display: ${align === 'center' ? 'block' : 'inline-block'};
-        margin: ${align === 'center' ? '20px auto' : '15px'};
+        margin: ${align === 'center' ? '24px auto' : '15px'};
         vertical-align: top;
         background: #f9fafb;
         border-radius: 8px;
         box-sizing: border-box;
         max-width: 100%;
         width: fit-content;
-        ${align === 'left' ? 'float: left; margin-right: 20px;' : ''}
-        ${align === 'right' ? 'float: right; margin-left: 20px;' : ''}
+        ${align === 'left' ? 'float: left; margin-right: 24px;' : ''}
+        ${align === 'right' ? 'float: right; margin-left: 24px;' : ''}
         ${align === 'center' ? 'clear: both; text-align: center;' : ''}
         transition: all 0.2s ease;
         ${editable ? 'cursor: pointer;' : ''}
         border: 1px solid #f3f4f6;
-        overflow: hidden;
       `;
 
       img.style.cssText = `
         max-width: 100%;
+        max-height: 450px;
         height: auto;
         display: block;
         margin: 0 auto;
         object-fit: contain;
-        border-radius: 4px;
+        border-radius: 6px;
       `;
       img.setAttribute('data-align', align);
       img.dataset.hasDeleteButton = "true";
