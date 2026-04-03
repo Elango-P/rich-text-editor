@@ -65,3 +65,5 @@ npm run build
 The output will be generated in the `dist/` directory.
 
 ## License
+
+MIT © [Elango](https://github.com/Elango-P)
