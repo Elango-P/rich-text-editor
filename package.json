@@ -1,10 +1,11 @@
 {
   "name": "react-lite-rich-text",
-  "version": "1.0.3",
+  "version": "1.0.5",
   "type": "module",
   "description": "A React rich text editor with formatting, image upload, and link support",
   "main": "dist/index.cjs.js",
   "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
   "files": [
     "dist"
   ],
@@ -35,13 +36,15 @@
     "@rollup/plugin-babel": "^6.0.4",
     "@rollup/plugin-commonjs": "^25.0.7",
     "@rollup/plugin-node-resolve": "^15.2.3",
+    "postcss": "^8.5.8",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "rollup": "^4.9.6",
-    "rollup-plugin-peer-deps-external": "^2.2.4"
+    "rollup-plugin-peer-deps-external": "^2.2.4",
+    "rollup-plugin-postcss": "^4.0.2"
   },
   "scripts": {
-    "build": "rollup -c",
+    "build": "rollup -c && cp src/index.d.ts dist/index.d.ts",
     "prepublishOnly": "npm run build"
   },
   "repository": {
@@ -55,6 +58,5 @@
   "directories": {
     "example": "example"
   },
-  "dependencies": {},
   "license": "ISC"
 }

@@ -3,6 +3,7 @@ import { FaImage, FaBold, FaItalic, FaUnderline, FaTextHeight, FaAlignCenter, Fa
 import { draftBlocksToHTML, isValidDraftFormat } from "./utils";
 import Spinner from "./Spinner";
 import LabelComponent from "./Label";
+import "./RichTextEditor.css";
 
 // Helper functions for HTML escaping
 const escapeHtml = (str) => {
@@ -1095,10 +1096,10 @@ export default function RichTextEditor({
   }, [editable, disabled]);
 
   return (
-    <div>
-      <LabelComponent>{label ? label : ""}</LabelComponent>
+    <div className="rte-main-wrapper" style={{ width: '100%' }}>
+      {label && <LabelComponent>{label}</LabelComponent>}
       <div
-        className={!showBorder ? "" : "border border-gray-200 rounded-xl bg-white shadow-sm transition-all duration-200 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent"}
+        className={!showBorder ? "" : "rte-container"}
         onClick={handleEditorClick}
         onDrop={handleDrop}
         onDragOver={(e) => {
@@ -1107,8 +1108,8 @@ export default function RichTextEditor({
         }}
       >
         {/* Toolbar */}
-        {editable &&
-          <div className={!showBorder ? "" : "flex flex-wrap gap-1 mb-2 items-center border-b border-gray-100 p-2 bg-gray-50/50 rounded-t-xl"} >
+        {editable && (
+          <div className="rte-toolbar">
             {/* Bold */}
             <button
               type="button"
@@ -1120,10 +1121,9 @@ export default function RichTextEditor({
                 triggerChange();
                 focus();
               }}
-              className={`h-9 w-9 flex items-center justify-center rounded-lg transition-colors ${isBold ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-200"
-                }`}
+              className={`rte-toolbar-button ${isBold ? "active" : ""}`}
             >
-              <FaBold size={16} />
+              <FaBold size={14} />
             </button>
 
             {/* Italic */}
@@ -1137,10 +1137,9 @@ export default function RichTextEditor({
                 triggerChange();
                 focus();
               }}
-              className={`h-9 w-9 flex items-center justify-center rounded-lg transition-colors ${isItalic ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-200"
-                }`}
+              className={`rte-toolbar-button ${isItalic ? "active" : ""}`}
             >
-              <FaItalic size={16} />
+              <FaItalic size={14} />
             </button>
 
             {/* Underline */}
@@ -1154,44 +1153,37 @@ export default function RichTextEditor({
                 triggerChange();
                 focus();
               }}
-              className={`h-9 w-9 flex items-center justify-center rounded-lg transition-colors ${isUnderline ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-200"
-                }`}
+              className={`rte-toolbar-button ${isUnderline ? "active" : ""}`}
             >
-              <FaUnderline size={16} />
+              <FaUnderline size={14} />
             </button>
 
+            <div style={{ width: '1px', height: '20px', backgroundColor: '#e5e7eb', margin: '0 4px' }}></div>
+
             {/* Font Size */}
-            <div className="flex items-center gap-2">
-              <select
-                value={currentFontSize}
-                onMouseDown={(e) => {
-                  e.stopPropagation(); // Prevent editor blur
-                }}
-                onChange={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  const size = e.target.value;
-                  if (!size) return;
-                  applyFontSize(size);
-                  setCurrentFontSize(size);
-                  focus(); // Return focus to editor
-                }}
-                className="h-8 w-20 rounded border border-gray-300 bg-gray-100 hover:bg-blue-100 hover:border-blue-500"
-              >
-                {[8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 37, 38, 40, 42, 45, 48].map((s) => (
-                  <option key={s} value={s}>
-                    {s}px
-                  </option>
-                ))}
-              </select>
-            </div>
+            <select
+              value={currentFontSize}
+              onMouseDown={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const size = e.target.value;
+                if (!size) return;
+                applyFontSize(size);
+                setCurrentFontSize(size);
+                focus();
+              }}
+              className="rte-toolbar-select"
+              style={{ width: '70px' }}
+            >
+              {[8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 48].map((s) => (
+                <option key={s} value={s}>{s}px</option>
+              ))}
+            </select>
 
             {/* Text Color */}
-            <label
-              title="Font Color"
-              className="relative h-8 w-8 flex items-center justify-center rounded border border-gray-300 bg-gray-100 hover:bg-blue-100 hover:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500 cursor-pointer"
-            >
-              <FaFont style={{ color: fontColor }} />
+            <label title="Font Color" className="rte-color-picker-label">
+              <FaFont size={14} style={{ color: fontColor }} />
               <input
                 type="color"
                 value={fontColor}
@@ -1203,74 +1195,55 @@ export default function RichTextEditor({
                   e.stopPropagation();
                   handleColorChange(e.target.value);
                 }}
-                className="absolute inset-0 opacity-0 cursor-pointer"
+                className="rte-color-input"
               />
             </label>
+
+            <div style={{ width: '1px', height: '20px', backgroundColor: '#e5e7eb', margin: '0 4px' }}></div>
+
             {/* Alignment */}
             <button
               type="button"
               title="Align Left"
-              className={`h-9 w-9 flex items-center justify-center rounded-lg transition-colors ${activeAlign === "left"
-                ? "bg-blue-100 text-blue-700"
-                : "text-gray-600 hover:bg-gray-200"
-                }`}
+              className={`rte-toolbar-button ${activeAlign === "left" ? "active" : ""}`}
               onMouseDown={(e) => {
                 e.preventDefault();
                 exec("justifyLeft");
                 setActiveAlign("left");
               }}
             >
-              <FaAlignLeft size={16} />
+              <FaAlignLeft size={14} />
             </button>
 
             <button
               type="button"
               title="Align Center"
-              className={`h-9 w-9 flex items-center justify-center rounded-lg transition-colors ${activeAlign === "center"
-                ? "bg-blue-100 text-blue-700"
-                : "text-gray-600 hover:bg-gray-200"
-                }`}
+              className={`rte-toolbar-button ${activeAlign === "center" ? "active" : ""}`}
               onMouseDown={(e) => {
                 e.preventDefault();
                 exec("justifyCenter");
                 setActiveAlign("center");
               }}
             >
-              <FaAlignCenter size={16} />
+              <FaAlignCenter size={14} />
             </button>
 
             <button
               type="button"
               title="Align Right"
-              className={`h-9 w-9 flex items-center justify-center rounded-lg transition-colors ${activeAlign === "right"
-                ? "bg-blue-100 text-blue-700"
-                : "text-gray-600 hover:bg-gray-200"
-                }`}
+              className={`rte-toolbar-button ${activeAlign === "right" ? "active" : ""}`}
               onMouseDown={(e) => {
                 e.preventDefault();
                 exec("justifyRight");
                 setActiveAlign("right");
               }}
             >
-              <FaAlignRight size={16} />
+              <FaAlignRight size={14} />
             </button>
 
-            <button
-              type="button"
-              title="Justify"
-              className={`h-9 w-9 flex items-center justify-center rounded-lg transition-colors ${activeAlign === "justify"
-                ? "bg-blue-100 text-blue-700"
-                : "text-gray-600 hover:bg-gray-200"
-                }`}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                exec("justifyFull");
-                setActiveAlign("justify");
-              }}
-            >
-              <FaAlignJustify size={16} />
-            </button>
+            <div style={{ width: '1px', height: '20px', backgroundColor: '#e5e7eb', margin: '0 4px' }}></div>
 
+            {/* Lists */}
             <button
               type="button"
               title="Unordered List"
@@ -1278,10 +1251,9 @@ export default function RichTextEditor({
                 e.preventDefault();
                 handleSelect("unordered");
               }}
-              className={`h-9 w-9 flex items-center justify-center rounded-lg transition-colors ${currentListType === "unordered" ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-200"
-                }`}
+              className={`rte-toolbar-button ${currentListType === "unordered" ? "active" : ""}`}
             >
-              <FaListUl size={16} />
+              <FaListUl size={14} />
             </button>
             <button
               type="button"
@@ -1290,17 +1262,14 @@ export default function RichTextEditor({
                 e.preventDefault();
                 handleSelect("ordered");
               }}
-              className={`h-9 w-9 flex items-center justify-center rounded-lg transition-colors ${currentListType === "ordered" ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-200"
-                }`}
+              className={`rte-toolbar-button ${currentListType === "ordered" ? "active" : ""}`}
             >
-              <FaListOl size={16} />
+              <FaListOl size={14} />
             </button>
+
             {/* Line Height */}
-            <div className="relative flex items-center ml-2">
-              <div className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none">
-                <FaTextHeight className="text-gray-500" />
-              </div>
-              <select
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+               <select
                 value={currentLineHeight}
                 onMouseDown={(e) => e.stopPropagation()}
                 onChange={(e) => {
@@ -1312,28 +1281,32 @@ export default function RichTextEditor({
                   }
                   focus();
                 }}
-                className="h-8 w-20 pl-8 rounded border border-gray-300 bg-gray-100 hover:bg-blue-100 hover:border-blue-500 appearance-none"
+                className="rte-toolbar-select"
+                style={{ width: '64px', paddingLeft: '24px' }}
               >
-                {['1', '1.15', '1.5', '2', '2.5', '3'].map((h) => (
-                  <option key={h} value={h}>
-                    {h}
-                  </option>
+                 <option value="" disabled>↕</option>
+                {['1', '1.15', '1.5', '2'].map((h) => (
+                  <option key={h} value={h}>{h}</option>
                 ))}
               </select>
+              <div style={{ position: 'absolute', left: '6px', pointerEvents: 'none', color: '#9ca3af' }}>
+                <FaTextHeight size={12} />
+              </div>
             </div>
 
+            <div style={{ width: '1px', height: '20px', backgroundColor: '#e5e7eb', margin: '0 4px' }}></div>
 
-
+            {/* Actions */}
             <button
               type="button"
               title="Add Link"
-              className="h-9 w-9 flex items-center justify-center rounded-lg text-gray-600 hover:bg-gray-200 transition-colors"
+              className="rte-toolbar-button"
               onMouseDown={(e) => {
                 e.preventDefault();
                 addLink();
               }}
             >
-              <span style={{ fontSize: '18px' }}>🔗</span>
+              <span style={{ fontSize: '16px' }}>🔗</span>
             </button>
 
             <input
@@ -1346,7 +1319,7 @@ export default function RichTextEditor({
             />
             <button
               type="button"
-              className="h-9 w-9 flex items-center justify-center rounded-lg text-gray-600 hover:bg-gray-200 transition-colors"
+              className="rte-toolbar-button"
               onMouseDown={(e) => {
                 e.preventDefault();
                 if (!isUploading) fileInputRef.current?.click();
@@ -1355,14 +1328,14 @@ export default function RichTextEditor({
               title="Upload image"
             >
               {isUploading ? (
-                <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                <div className="rte-spinner" style={{ width: '14px', height: '14px', borderWidth: '2px' }}></div>
               ) : (
-                <FaImage size={18} />
+                <FaImage size={14} />
               )}
             </button>
           </div>
-        }
-        {/* Editor */}
+        )}
+        {/* Editor Content Area */}
         <div
           ref={editorRef}
           contentEditable={editable && disabled !== true}
@@ -1375,76 +1348,46 @@ export default function RichTextEditor({
           onKeyDown={handleKeyDown}
           onClick={handleEditorClick}
           style={{
-            minHeight: minHeight ? minHeight : 10,
-            paddingLeft: paddingLeft ? paddingLeft : 10,
-            border: !showBorder ? "" : editable ? "1px solid #e5e7eb" : "",
-            borderRadius: 6,
-            outline: "none",
-            counterReset: "list-counter",
-            overflowY: "auto",
-            maxHeight: maxHeight ? maxHeight : "500px"
+            minHeight: minHeight || '150px',
+            maxHeight: maxHeight || '500px',
+            paddingLeft: paddingLeft || '12px'
           }}
-          className="scrollbar-hide [&_ul]:list-disc [&_ul]:ml-5 [&_ol]:list-decimal [&_ol]:ml-5"
+          className="rte-content scrollbar-hide"
         />
-
-
-
-        {/* Link Modal */}
         {linkModalOpen && (
-          <div
-            style={{
-              position: "fixed",
-              inset: 0,
-              backgroundColor: "rgba(0,0,0,0.4)",
-              backdropFilter: "blur(4px)",
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              zIndex: 9999,
-            }}
-            onClick={cancelLink}
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="bg-white p-6 rounded-2xl shadow-2xl min-w-[320px] flex flex-col gap-4 border border-gray-100 animate-in fade-in zoom-in duration-200"
-            >
-              <h3 className="text-lg font-semibold text-gray-800">Insert Link</h3>
-              <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium text-gray-600">URL</label>
+          <div className="rte-modal-overlay" onClick={cancelLink}>
+            <div className="rte-modal" onClick={(e) => e.stopPropagation()}>
+              <h3 className="rte-modal-title">Insert Link</h3>
+              <div className="rte-form-group">
+                <label className="rte-label">URL</label>
                 <input
                   type="url"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                  className="rte-input"
                   value={linkUrl}
                   onChange={(e) => setLinkUrl(e.target.value)}
                   autoFocus
                   placeholder="https://example.com"
                 />
               </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium text-gray-600">Display Text</label>
+              <div className="rte-form-group">
+                <label className="rte-label">Display Text</label>
                 <input
                   type="text"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                  className="rte-input"
                   value={linkText}
                   onChange={(e) => setLinkText(e.target.value)}
                   placeholder="Link text"
                 />
               </div>
 
-              <div
-                style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}
-              >
-                <button
-                  type="button" 
-                  className="px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors font-medium" 
-                  onClick={cancelLink}
-                >
+              <div className="rte-modal-actions">
+                <button type="button" className="rte-button rte-button-secondary" onClick={cancelLink}>
                   Cancel
                 </button>
                 <button
-                  type="button" 
-                  className="bg-blue-600 hover:bg-blue-700 px-6 py-2 text-white rounded-lg transition-colors font-medium shadow-sm disabled:opacity-50 disabled:cursor-not-allowed" 
-                  onClick={confirmLink} 
+                  type="button"
+                  className="rte-button rte-button-primary"
+                  onClick={confirmLink}
                   disabled={!linkUrl}
                 >
                   Insert
@@ -1453,35 +1396,23 @@ export default function RichTextEditor({
             </div>
           </div>
         )}
+
+        {/* Image Zoom Modal */}
         {imageModalOpen && (
-          <div
-            style={{
-              position: "fixed",
-              inset: 0,
-              backgroundColor: "rgba(0,0,0,0.5)",
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              zIndex: 10000,
-            }}
-            onClick={closeImageModal}
-          >
+          <div className="rte-modal-overlay" onClick={closeImageModal}>
             <div
-              style={{
-                position: "relative",
-                maxWidth: "90%",
-                maxHeight: "90%",
-              }}
+              style={{ position: "relative", maxWidth: "90%", maxHeight: "90%" }}
               onClick={(e) => e.stopPropagation()}
             >
               <img
                 src={selectedImageUrl}
-                objectFit="contain"
                 style={{
                   width: "100%",
                   maxHeight: "90vh",
+                  borderRadius: '12px',
                   transform: `scale(${zoomLevel})`,
-                  transition: "transform 0.2s ease-in-out",
+                  transition: "transform 0.2s ease",
+                  boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)'
                 }}
                 alt="Zoomed"
               />
@@ -1489,32 +1420,28 @@ export default function RichTextEditor({
           </div>
         )}
       </div>
+
       {showEditButton && editable && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "flex-end",
-            gap: "8px",
-            marginTop: "12px",
-          }}
-        >
-          <i
-            className="fas fa-check me-2"
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "12px" }}>
+          <button
+            type="button"
+            className="rte-button rte-button-secondary"
+            onClick={() => setEditable(false)}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="rte-button rte-button-primary"
             onClick={() => {
               handleChange && handleChange(html);
               setEditable(false);
             }}
-          ></i>
-          <i
-            className="fas fa-times"
-            onClick={() => {
-              setEditable(false);
-            }}
-          ></i>
+          >
+            Save Changes
+          </button>
         </div>
       )}
     </div>
   );
-
 }

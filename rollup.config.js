@@ -2,6 +2,7 @@ import resolve from "@rollup/plugin-node-resolve";
 import commonjs from "@rollup/plugin-commonjs";
 import babel from "@rollup/plugin-babel";
 import peerDepsExternal from "rollup-plugin-peer-deps-external";
+import postcss from "rollup-plugin-postcss";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 const pkg = require("./package.json");
@@ -22,6 +23,10 @@ export default {
   ],
   plugins: [
     peerDepsExternal(),
+    postcss({
+      inject: true,
+      minimize: true,
+    }),
     resolve({
       extensions: [".js", ".jsx"],
     }),
