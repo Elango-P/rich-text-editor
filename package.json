@@ -24,7 +24,6 @@
     "minimalist"
   ],
   "author": "Elango",
-  "license": "MIT",
   "peerDependencies": {
     "react": ">=17",
     "react-dom": ">=17"
@@ -41,5 +40,13 @@
   "scripts": {
     "build": "rollup -c",
     "prepublishOnly": "npm run build"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Elango-P/rich-text-editor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Elango-P/rich-text-editor/issues"
+  },
+  "homepage": "https://github.com/Elango-P/rich-text-editor#readme"
 }
