@@ -432,40 +432,12 @@ export default function RichTextEditor({
       }
 
       const wrapper = document.createElement("div");
-      wrapper.className = "image-container";
-
-      // Get alignment from data-align attribute or default to center
       const align = img.getAttribute('data-align') || 'center';
-      wrapper.className += ` image-align-${align}`;
+      wrapper.className = `image-container image-align-${align}`;
+      wrapper.style.cursor = editable ? 'pointer' : 'default';
 
-      wrapper.style.cssText = `
-        position: relative;
-        display: ${align === 'center' ? 'block' : 'inline-block'};
-        margin: ${align === 'center' ? '24px auto' : '15px'};
-        vertical-align: top;
-        background: #f9fafb;
-        border-radius: 12px;
-        box-sizing: border-box;
-        max-width: 100%;
-        width: ${align === 'center' ? '100%' : '350px'};
-        height: 300px;
-        ${align === 'left' ? 'float: left; margin-right: 24px;' : ''}
-        ${align === 'right' ? 'float: right; margin-left: 24px;' : ''}
-        ${align === 'center' ? 'clear: both; text-align: center;' : ''}
-        transition: all 0.2s ease;
-        ${editable ? 'cursor: pointer;' : ''}
-        border: 1px solid #f3f4f6;
-      `;
-
-      img.style.cssText = `
-        width: 100%;
-        height: 100%;
-        display: block;
-        margin: 0 auto;
-        object-fit: contain;
-        border-radius: 8px;
-        background: #ffffff;
-      `;
+      img.className = "rte-image";
+      img.style.cssText = ""; // Reset inline styles
       img.setAttribute('data-align', align);
       img.dataset.hasDeleteButton = "true";
 
@@ -474,29 +446,9 @@ export default function RichTextEditor({
 
       const deleteBtn = document.createElement("button");
       deleteBtn.innerHTML = "×";
-      deleteBtn.style.cssText = `
-        position: absolute;
-        top: 0;
-        right: 0;
-        transform: translate(50%, -50%);
-        background: red;
-        color: white;
-        border-radius: 50%;
-        width: 24px;
-        height: 24px;
-        display: ${editable ? 'flex' : 'none'};
-        align-items: center;
-        justify-content: center;
-         cursor: ${editable ? 'pointer' : 'default'};
-        border: 2px solid white;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        padding: 0;
-        font-size: 16px;
-        line-height: 1;
-        font-weight: bold;
-        z-index: 10;
-        pointer-events: ${editable ? 'auto' : 'none'};
-      `;
+      deleteBtn.className = "image-delete-button";
+      deleteBtn.style.display = editable ? 'flex' : 'none';
+      deleteBtn.style.pointerEvents = editable ? 'auto' : 'none';
       deleteBtn.title = "Remove image";
 
       deleteBtn.onclick = (e) => {
@@ -685,22 +637,38 @@ export default function RichTextEditor({
   const insertNodeAtCursor = (node) => {
     try {
       const sel = window.getSelection();
-      if (!sel || !sel.rangeCount) {
-        editorRef.current && editorRef.current.appendChild(node);
-        return;
+      let range;
+
+      if (!sel || sel.rangeCount === 0 || !editorRef.current.contains(sel.anchorNode)) {
+        editorRef.current.focus();
+        
+        // Move cursor to end if not already in editor
+        range = document.createRange();
+        range.selectNodeContents(editorRef.current);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } else {
+        range = sel.getRangeAt(0);
       }
-      const range = sel.getRangeAt(0);
+
       range.deleteContents();
       range.insertNode(node);
-      const space = document.createTextNode(" ");
-      node.parentNode && node.parentNode.insertBefore(space, node.nextSibling);
+      
+      const space = document.createTextNode("\u00A0");
+      if (node.parentNode) {
+        node.parentNode.insertBefore(space, node.nextSibling);
+      }
+      
       range.setStartAfter(space);
       range.collapse(true);
-
       sel.removeAllRanges();
       sel.addRange(range);
     } catch (error) {
-      console.log(error)
+      console.error("Insertion error:", error);
+      if (editorRef.current) {
+        editorRef.current.appendChild(node);
+      }
     }
   };
 
