@@ -440,32 +440,30 @@ export default function RichTextEditor({
 
       wrapper.style.cssText = `
         position: relative;
-        display: inline-block;
-        margin: 15px;
+        display: ${align === 'center' ? 'block' : 'inline-block'};
+        margin: ${align === 'center' ? '20px auto' : '15px'};
         vertical-align: top;
-        background: whitesmoke;
-        border-radius: 6px;
+        background: #f9fafb;
+        border-radius: 8px;
         box-sizing: border-box;
-        max-width: 280px;
-        min-width: 280px;
-        min-height: 250px;
-        max-height: 250px;
-        ${align === 'left' ? 'float: left; margin-right: 15px;' : ''}
-        ${align === 'right' ? 'float: right; margin-left: 15px;' : ''}
-        ${align === 'center' ? 'clear: both;' : ''}
-        transition: opacity 0.2s, border 0.2s;
+        max-width: 100%;
+        width: fit-content;
+        ${align === 'left' ? 'float: left; margin-right: 20px;' : ''}
+        ${align === 'right' ? 'float: right; margin-left: 20px;' : ''}
+        ${align === 'center' ? 'clear: both; text-align: center;' : ''}
+        transition: all 0.2s ease;
         ${editable ? 'cursor: pointer;' : ''}
+        border: 1px solid #f3f4f6;
+        overflow: hidden;
       `;
 
       img.style.cssText = `
-         max-width: 280px;
-        min-width: 280px;
-        min-height: 250px;
-        max-height: 250px;
-        height: 250px;
+        max-width: 100%;
+        height: auto;
         display: block;
+        margin: 0 auto;
         object-fit: contain;
-        /* pointer-events: none; */
+        border-radius: 4px;
       `;
       img.setAttribute('data-align', align);
       img.dataset.hasDeleteButton = "true";
@@ -1108,7 +1106,6 @@ export default function RichTextEditor({
         }}
       >
         {/* Toolbar */}
-        {editable && (
           <div className="rte-toolbar">
             {/* Bold */}
             <button
@@ -1334,7 +1331,6 @@ export default function RichTextEditor({
               )}
             </button>
           </div>
-        )}
         {/* Editor Content Area */}
         <div
           ref={editorRef}
@@ -1352,7 +1348,7 @@ export default function RichTextEditor({
             maxHeight: maxHeight || '500px',
             paddingLeft: paddingLeft || '12px'
           }}
-          className="rte-content scrollbar-hide"
+          className="rte-content"
         />
         {linkModalOpen && (
           <div className="rte-modal-overlay" onClick={cancelLink}>
