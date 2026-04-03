@@ -1,5 +1,5 @@
 {
-  "name": "react-lite-rich-text",
+  "name": "react-lite-rich-text-editor",
   "version": "1.1.0",
   "type": "module",
   "description": "A React rich text editor with formatting, image upload, and link support",
@@ -10,20 +10,19 @@
     "dist"
   ],
   "keywords": [
-    "react",
-    "rich-text-editor",
-    "wysiwyg",
-    "editor",
-    "text-editor",
-    "react-rte",
-    "lightweight",
-    "html-editor",
-    "quill-alternative",
-    "draftjs-alternative",
-    "customizable-editor",
-    "react-component",
-    "minimalist"
-  ],
+  "react rich text editor",
+  "react wysiwyg editor",
+  "react editor",
+  "rich text editor",
+  "wysiwyg editor",
+  "react rte",
+  "react html editor",
+  "react text editor",
+  "lightweight rich text editor",
+  "react-lite-rich-text",
+  "draftjs alternative",
+  "quill alternative"
+],
   "author": "Elango",
   "peerDependencies": {
     "react": ">=16",
