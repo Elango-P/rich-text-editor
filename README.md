@@ -9,9 +9,6 @@ A **premium, zero-dependency**, and industry-standard rich text editor for React
   <a href="https://www.npmjs.com/package/react-lite-rich-text-editor">
     <img src="https://img.shields.io/npm/v/react-lite-rich-text-editor?style=for-the-badge" alt="NPM Version" />
   </a>
-  <a href="https://codesandbox.io/s/github/Elango-P/rich-text-editor/tree/main/example">
-    <img src="https://img.shields.io/badge/TRY%20IT-SANDBOX-orange?style=for-the-badge&logo=codesandbox" alt="CodeSandbox" />
-  </a>
 </div>
 
 ---
@@ -19,7 +16,6 @@ A **premium, zero-dependency**, and industry-standard rich text editor for React
 ## Try it Out
 
 - **Live Demo**: [Industrial Rich Text Editor Demo](https://elangodev.com/npm)
-- **Interactive Sandbox**: [Open in CodeSandbox](https://codesandbox.io/s/github/Elango-P/rich-text-editor/tree/main/example)
 - **Local Preview**: Clone this repo and run `npm install && npm run dev` inside the `example/` folder.
 
 ---
