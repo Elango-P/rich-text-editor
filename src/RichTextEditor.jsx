@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { FaImage, FaBold, FaItalic, FaUnderline, FaTextHeight, FaAlignCenter, FaAlignRight, FaAlignJustify, FaAlignLeft, FaListOl, FaListUl, FaFont, FaTable, FaYoutube, FaTrash, FaObjectGroup } from "./icons";
+import { FaImage, FaBold, FaItalic, FaUnderline, FaTextHeight, FaAlignCenter, FaAlignRight, FaAlignJustify, FaAlignLeft, FaListOl, FaListUl, FaFont, FaTable, FaYoutube, FaVideo, FaTrash, FaObjectGroup } from "./icons";
 import { draftBlocksToHTML, isValidDraftFormat } from "./utils";
 import Spinner from "./Spinner";
 import LabelComponent from "./Label";
@@ -73,8 +73,8 @@ export default function RichTextEditor({
   const [zoomLevel, setZoomLevel] = useState(1);
   const [isUploading, setIsUploading] = useState(false);
 
-  const [youtubeModalOpen, setYoutubeModalOpen] = useState(false);
-  const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [videoModalOpen, setVideoModalOpen] = useState(false);
+  const [videoUrl, setVideoUrl] = useState("");
   const [tableModalOpen, setTableModalOpen] = useState(false);
   const [hoveredTable, setHoveredTable] = useState(null);
   const [tableRows, setTableRows] = useState(3);
@@ -95,6 +95,14 @@ export default function RichTextEditor({
     setImageModalOpen(false);
     setSelectedImageUrl("");
     setZoomLevel(1);
+  };
+
+  const saveSelection = () => {
+    if (typeof window === "undefined") return;
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      selectionRangeRef.current = sel.getRangeAt(0).cloneRange();
+    }
   };
 
   const handleKeyUp = () => {
@@ -570,14 +578,38 @@ export default function RichTextEditor({
     triggerChange && triggerChange();
   };
 
-  const insertYoutube = () => {
-    let url = youtubeUrl.trim();
-    // More robust regex for various YouTube formats
-    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=|watch\?vi=|\&vi=)([^#\&\?]*).*/;
-    const match = url.match(regExp);
-    const videoId = (match && match[2].length === 11) ? match[2] : null;
+  const parseVideoUrl = (url) => {
+    url = url.trim();
+    if (!url) return null;
 
-    if (videoId) {
+    // YouTube
+    const ytRegExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=|watch\?vi=|\&vi=)([^#\&\?]*).*/;
+    const ytMatch = url.match(ytRegExp);
+    if (ytMatch && ytMatch[2].length === 11) {
+      return `https://www.youtube.com/embed/${ytMatch[2]}`;
+    }
+
+    // Vimeo
+    const vimeoRegExp = /vimeo\.com\/(?:channels\/(?:\w+\/)?|groups\/([^\/]*)\/videos\/|album\/(\d+)\/video\/|video\/|)(\d+)(?:$|\/|\?)/;
+    const vimeoMatch = url.match(vimeoRegExp);
+    if (vimeoMatch && vimeoMatch[3]) {
+      return `https://player.vimeo.com/video/${vimeoMatch[3]}`;
+    }
+
+    // DailyMotion
+    const dmRegExp = /dailymotion\.com\/video\/([a-zA-Z0-9]+)/;
+    const dmMatch = url.match(dmRegExp);
+    if (dmMatch && dmMatch[1]) {
+      return `https://www.dailymotion.com/embed/video/${dmMatch[1]}`;
+    }
+
+    return null;
+  };
+
+  const insertVideo = () => {
+    const embedUrl = parseVideoUrl(videoUrl);
+
+    if (embedUrl) {
       if (editorRef.current) {
         editorRef.current.focus();
       }
@@ -590,7 +622,7 @@ export default function RichTextEditor({
 
       const embedHtml = `<div class="video-container">
         <iframe 
-          src="https://www.youtube.com/embed/${videoId}" 
+          src="${embedUrl}" 
           frameborder="0" 
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
           allowfullscreen
@@ -600,21 +632,19 @@ export default function RichTextEditor({
       try {
         document.execCommand("insertHTML", false, embedHtml);
       } catch (err) {
-        console.error("Failed to insert YouTube HTML:", err);
-        // Fallback: append to the end of the editor
+        console.error("Failed to insert Video HTML:", err);
         if (editorRef.current) {
           const div = document.createElement('div');
           div.innerHTML = embedHtml;
           editorRef.current.appendChild(div);
         }
       }
+      setVideoModalOpen(false);
+      setVideoUrl("");
+      triggerChange && triggerChange();
     } else {
-      console.warn("Invalid YouTube URL or Video ID not found");
+      console.warn("Invalid Video URL or Platform not supported");
     }
-    
-    setYoutubeModalOpen(false);
-    setYoutubeUrl("");
-    triggerChange && triggerChange();
   };
 
 
@@ -1630,21 +1660,18 @@ export default function RichTextEditor({
               <FaTable size={14} />
             </button>
 
-            {/* YouTube */}
+            {/* Video */}
             <button
               type="button"
-              title="Embed YouTube Video"
-              className="rte-toolbar-button"
+              title="Embed Video (YouTube, Vimeo, etc.)"
+              className={`rte-toolbar-button ${videoModalOpen ? 'active' : ''}`}
               onMouseDown={(e) => {
                 e.preventDefault();
-                const sel = window.getSelection();
-                if (sel && sel.rangeCount > 0) {
-                  selectionRangeRef.current = sel.getRangeAt(0).cloneRange();
-                }
-                setYoutubeModalOpen(true);
+                saveSelection();
+                setVideoModalOpen(true);
               }}
             >
-              <FaYoutube size={14} />
+              <FaVideo size={14} />
             </button>
 
             {/* Table Actions (Conditional) */}
@@ -1663,20 +1690,38 @@ export default function RichTextEditor({
                     <button type="button" title="Add Row Below" className="rte-toolbar-button" onMouseDown={(e) => { e.preventDefault(); tableAction('addRowBelow'); }}>+R↓</button>
                     <button type="button" title="Add Col Before" className="rte-toolbar-button" onMouseDown={(e) => { e.preventDefault(); tableAction('addColBefore'); }}>+C←</button>
                     <button type="button" title="Add Col After" className="rte-toolbar-button" onMouseDown={(e) => { e.preventDefault(); tableAction('addColAfter'); }}>+C→</button>
-                    
-                    <div style={{ width: '1px', height: '20px', backgroundColor: '#f3f4f6', margin: '0 4px' }}></div>
-                    
                     <button type="button" title="Merge Cells (Right)" className="rte-toolbar-button" onMouseDown={(e) => { e.preventDefault(); tableAction('mergeRight'); }}><FaObjectGroup size={14} /></button>
-                    
-                    <button type="button" title="Delete Row" className="rte-toolbar-button rte-toolbar-button-danger " onMouseDown={(e) => { e.preventDefault(); tableAction('deleteRow'); }}>
-                      <FaTrash size={12} /> <span style={{ fontSize: '10px' }}>Row</span>
-                    </button>
-                    <button type="button" title="Delete Column" className="rte-toolbar-button rte-toolbar-button-danger" onMouseDown={(e) => { e.preventDefault(); tableAction('deleteCol'); }}>
-                      <FaTrash size={12} /> <span style={{ fontSize: '10px',marginRight:"5px" }}>Col</span>
-                    </button>
-                    <button type="button" title="Delete Table" className="rte-toolbar-button rte-toolbar-button-danger" onMouseDown={(e) => { e.preventDefault(); tableAction('deleteTable'); }}>
-                      <FaTrash size={14} /> <span style={{ fontWeight: '600' }}>Table</span>
-                    </button>
+                   <div style={{ display: 'flex', gap: '10px' }}>
+  <button
+    type="button"
+    title="Delete Row"
+    className="rte-toolbar-button rte-toolbar-button-danger"
+    onMouseDown={(e) => { e.preventDefault(); tableAction('deleteRow'); }}
+  >
+    <FaTrash size={12} />
+    <span style={{ fontSize: '10px' }}>Row</span>
+  </button>
+
+  <button
+    type="button"
+    title="Delete Column"
+    className="rte-toolbar-button rte-toolbar-button-danger"
+    onMouseDown={(e) => { e.preventDefault(); tableAction('deleteCol'); }}
+  >
+    <FaTrash size={12} />
+    <span style={{ fontSize: '10px' }}>Col</span>
+  </button>
+
+  <button
+    type="button"
+    title="Delete Table"
+    className="rte-toolbar-button rte-toolbar-button-danger"
+    onMouseDown={(e) => { e.preventDefault(); tableAction('deleteTable'); }}
+  >
+    <FaTrash size={12} />
+    <span style={{ fontSize: '10px' }}>Table</span>
+  </button>
+</div>
                   </>
                 );
               }
@@ -1779,31 +1824,42 @@ export default function RichTextEditor({
           </div>
         )}
 
-        {/* YouTube Modal */}
-        {youtubeModalOpen && (
-          <div className="rte-modal-overlay" onClick={() => setYoutubeModalOpen(false)}>
+        {/* Video Modal */}
+        {videoModalOpen && (
+          <div className="rte-modal-overlay" onClick={() => setVideoModalOpen(false)}>
             <div className="rte-modal" onClick={(e) => e.stopPropagation()}>
               <div className="rte-modal-header">
-                <h3 className="rte-modal-title">Embed YouTube Video</h3>
+                <h3 className="rte-modal-title">Embed Video</h3>
               </div>
               <div className="rte-form-group">
-                <label className="rte-label">Paste YouTube Video URL</label>
+                <label className="rte-label">Paste Video URL (YouTube, Vimeo...) <span style={{ color: '#ef4444' }}>*</span></label>
                 <input 
                   type="text" 
                   className="rte-input" 
-                  value={youtubeUrl} 
-                  onChange={(e) => setYoutubeUrl(e.target.value)} 
-                  placeholder="https://www.youtube.com/watch?v=..." 
+                  value={videoUrl} 
+                  onChange={(e) => setVideoUrl(e.target.value)} 
+                  placeholder="Paste URL here..." 
                   autoFocus 
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') insertYoutube();
-                    if (e.key === 'Escape') setYoutubeModalOpen(false);
+                    if (e.key === 'Enter' && videoUrl.trim()) insertVideo();
+                    if (e.key === 'Escape') setVideoModalOpen(false);
                   }}
                 />
               </div>
               <div className="rte-modal-actions">
-                <button type="button" className="rte-button rte-button-secondary" onClick={() => setYoutubeModalOpen(false)}>Cancel</button>
-                <button type="button" className="rte-button rte-button-primary" onClick={insertYoutube}>Embed Video</button>
+                <button type="button" className="rte-button rte-button-secondary" onClick={() => setVideoModalOpen(false)}>Cancel</button>
+                <button 
+                  type="button" 
+                  className="rte-button rte-button-primary" 
+                  onClick={() => {
+                    if (videoUrl.trim()) {
+                      insertVideo();
+                    }
+                  }}
+                  disabled={!videoUrl.trim()}
+                >
+                  Embed Video
+                </button>
               </div>
             </div>
           </div>

@@ -1,18 +1,39 @@
-# React Lite Rich Text
+# React Lite Rich Text Editor
 
-A premium, lightweight, and highly customizable rich text editor for React.
+A **premium, zero-dependency**, and industry-standard rich text editor for React.
 
-![Rich Text Editor Preview](assets/preview.png)
+<div align="center">
+  <a href="https://elangodev.com/npm">
+    <img src="https://img.shields.io/badge/TRY%20IT-LIVE%20DEMO-blueviolet?style=for-the-badge&logo=rocket" alt="Try it out" />
+  </a>
+  <a href="https://www.npmjs.com/package/react-lite-rich-text-editor">
+    <img src="https://img.shields.io/npm/v/react-lite-rich-text-editor?style=for-the-badge" alt="NPM Version" />
+  </a>
+  <a href="https://codesandbox.io/s/github/Elango-P/rich-text-editor/tree/main/example">
+    <img src="https://img.shields.io/badge/TRY%20IT-SANDBOX-orange?style=for-the-badge&logo=codesandbox" alt="CodeSandbox" />
+  </a>
+</div>
+
+---
+
+## Try it Out
+
+- **Live Demo**: [Industrial Rich Text Editor Demo](https://elangodev.com/npm)
+- **Interactive Sandbox**: [Open in CodeSandbox](https://codesandbox.io/s/github/Elango-P/rich-text-editor/tree/main/example)
+- **Local Preview**: Clone this repo and run `npm install && npm run dev` inside the `example/` folder.
+
+---
 
 ## Features
 
--   ✨ **Premium UI**: Modern, glassmorphism-inspired design with smooth transitions.
--   📝 **Rich Formatting**: Bold, italic, underline, font sizes, colors, and line heights.
--   🔗 **Smart Links**: Automatic protocol handling (prepends `https://`) and new window navigation.
--   🖼️ **Image Support**: Easy image uploads with delete functionality.
--   🎨 **Vanilla CSS**: Premium, dependency-free styling with a modern aesthetic.
--   ⚡ **Lightweight**: Zero-dependency core (except for React and Lucide-style icons).
--   🔍 **HTML Preview**: Real-time access to the underlying HTML content.
+-   ✨ **Zero-Dependency Core**: Built entirely with native Browser APIs for maximum performance and stability.
+-   📊 **Advanced Tables**: Insert tables, add/delete rows/columns, and merge cells with intuitive toolbar controls.
+-   🎥 **Universal Video Embedding**: Seamlessly embed videos from **YouTube, Vimeo, DailyMotion**, and more.
+-   📏 **Image Resizing**: Interactive 4-handle resizing system for uploaded images.
+-   🧮 **Content Metrics**: Stealthy, professional footer showing real-time **Word and Character counts**.
+-   📝 **Rich Formatting**: Bold, italic, underline, font sizes, colors, alignment, and lists.
+-   🔗 **Smart Links**: Automatic protocol handling and new window navigation.
+-   🎨 **Premium UI**: Modern, glassmorphism-inspired design with a polished Look & Feel.
 
 ## Installation
 
