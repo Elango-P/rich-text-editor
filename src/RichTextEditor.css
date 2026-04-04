@@ -54,6 +54,11 @@
   cursor: not-allowed;
 }
 
+.rte-toolbar-button-danger:hover {
+  background-color: #fef2f2 !important;
+  color: #dc2626 !important;
+}
+
 .rte-toolbar-select {
   height: 32px;
   padding: 0 8px;
@@ -126,6 +131,40 @@
   max-width: 100%;
   height: auto;
   border-radius: 8px;
+  display: block;
+}
+
+/* Table Styles */
+.rte-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+}
+
+.rte-content td, .rte-content th {
+  border: 1px solid #e5e7eb;
+  padding: 12px;
+  min-width: 40px;
+  word-break: break-word;
+}
+
+/* Video Containers */
+.video-container {
+  position: relative;
+  padding-bottom: 56.25%;
+  height: 0;
+  overflow: hidden;
+  margin: 16px 0;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.video-container iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
 }
 
 /* Modal Styles */
@@ -143,7 +182,7 @@
 
 .rte-modal {
   background-color: #ffffff;
-  padding: 24px;
+  padding: 0;
   border-radius: 16px;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
   width: 100%;
@@ -159,23 +198,34 @@
   font-size: 18px;
   font-weight: 600;
   color: #111827;
-  margin-bottom: 4px;
+  margin: 0;
+  text-align: center;
+  flex: 1;
+}
+
+.rte-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid #f3f4f6;
 }
 
 .rte-form-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  padding: 16px 24px;
 }
 
 .rte-label {
   font-size: 14px;
-  font-weight: 500;
-  color: #4b5563;
+  font-weight: 600;
+  color: #374151;
 }
 
 .rte-input {
-  width: 100%;
+  width: 93%;
   padding: 8px 12px;
   border-radius: 8px;
   border: 1px solid #d1d5db;
@@ -191,8 +241,9 @@
 .rte-modal-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 8px;
+  gap: 12px;
+  padding: 16px 24px 20px;
+  border-top: 1px solid #f3f4f6;
 }
 
 .rte-button {
@@ -335,8 +386,71 @@
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
 }
 
+/* Table Hover Delete */
+.rte-table-delete-hover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rte-table-delete-btn {
+  background: white;
+  border: 1px solid #ef4444;
+  color: #ef4444;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.rte-table-delete-btn:hover {
+  background: #ef4444;
+  color: white;
+  transform: scale(1.1);
+}
+
+.rte-table-delete-btn:active {
+  transform: scale(0.95);
+}
+
 .image-container:after {
   content: "";
   display: table;
   clear: both;
+}
+
+/* Footer Metrics */
+.rte-footer {
+  padding: 6px 16px;
+  background-color: #fcfcfd;
+  border-top: 1px solid #f3f4f6;
+  display: flex;
+  justify-content: flex-end;
+  user-select: none;
+}
+
+.rte-footer-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #9ca3af;
+  font-size: 11px;
+  letter-spacing: 0.025em;
+}
+
+.rte-footer-separator {
+  color: #e5e7eb;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.rte-footer-item b {
+  color: #6b7280;
+  font-weight: 600;
 }

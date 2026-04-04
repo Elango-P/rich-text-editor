@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { FaImage, FaBold, FaItalic, FaUnderline, FaTextHeight, FaAlignCenter, FaAlignRight, FaAlignJustify, FaAlignLeft, FaListOl, FaListUl, FaFont } from "./icons";
+import { FaImage, FaBold, FaItalic, FaUnderline, FaTextHeight, FaAlignCenter, FaAlignRight, FaAlignJustify, FaAlignLeft, FaListOl, FaListUl, FaFont, FaTable, FaYoutube, FaTrash, FaObjectGroup } from "./icons";
 import { draftBlocksToHTML, isValidDraftFormat } from "./utils";
 import Spinner from "./Spinner";
 import LabelComponent from "./Label";
@@ -72,6 +72,17 @@ export default function RichTextEditor({
   const [selectedImageUrl, setSelectedImageUrl] = useState("");
   const [zoomLevel, setZoomLevel] = useState(1);
   const [isUploading, setIsUploading] = useState(false);
+
+  const [youtubeModalOpen, setYoutubeModalOpen] = useState(false);
+  const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [tableModalOpen, setTableModalOpen] = useState(false);
+  const [hoveredTable, setHoveredTable] = useState(null);
+  const [tableRows, setTableRows] = useState(3);
+  const [tableCols, setTableCols] = useState(3);
+  const [selectionVersion, setSelectionVersion] = useState(0);
+
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [resizeData, setResizeData] = useState(null);
   const openImageModal = (url) => {
     if (editorRef.current) {
       scrollTopRef.current = editorRef.current.scrollTop;
@@ -84,6 +95,11 @@ export default function RichTextEditor({
     setImageModalOpen(false);
     setSelectedImageUrl("");
     setZoomLevel(1);
+  };
+
+  const handleKeyUp = () => {
+    saveSelection();
+    setSelectionVersion(v => v + 1);
   };
 
   const handleZoomIn = () => {
@@ -132,6 +148,9 @@ export default function RichTextEditor({
 
   useEffect(() => {
     const handleClick = (e) => {
+      // Trigger selection update for toolbar reactivity
+      setSelectionVersion(v => v + 1);
+
       const deleteBtn = e.target.closest('button[title="Remove image"]');
       if (deleteBtn && editable) {
         e.preventDefault();
@@ -409,6 +428,193 @@ export default function RichTextEditor({
       setLinkUrl("");
       setLinkModalOpen(true);
     }
+  };
+
+  const findParentTag = (node, tagName) => {
+    if (!node) return null;
+    let curr = node;
+    while (curr && curr !== editorRef.current) {
+      if (curr.tagName === tagName) return curr;
+      curr = curr.parentNode;
+    }
+    return null;
+  };
+
+  const tableAction = (action) => {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    
+    const cell = findParentTag(sel.anchorNode, 'TD') || findParentTag(sel.anchorNode, 'TH');
+    if (!cell) return;
+    
+    const row = cell.parentNode;
+    const table = row.parentNode.closest('table');
+    
+    switch (action) {
+      case 'addRowAbove':
+        const newRowAbove = table.insertRow(row.rowIndex);
+        for (let i = 0; i < row.cells.length; i++) {
+          const newCell = newRowAbove.insertCell(i);
+          newCell.style.border = "1px solid #e5e7eb";
+          newCell.style.padding = "12px";
+          newCell.innerHTML = "&nbsp;";
+        }
+        break;
+      case 'addRowBelow':
+        const newRowBelow = table.insertRow(row.rowIndex + 1);
+        for (let i = 0; i < row.cells.length; i++) {
+          const newCell = newRowBelow.insertCell(i);
+          newCell.style.border = "1px solid #e5e7eb";
+          newCell.style.padding = "12px";
+          newCell.innerHTML = "&nbsp;";
+        }
+        break;
+      case 'addColBefore':
+        const cellIndex = cell.cellIndex;
+        for (let i = 0; i < table.rows.length; i++) {
+          const newCell = table.rows[i].insertCell(cellIndex);
+          newCell.style.border = "1px solid #e5e7eb";
+          newCell.style.padding = "12px";
+          newCell.innerHTML = "&nbsp;";
+        }
+        break;
+      case 'addColAfter':
+        const cellIndexAfter = cell.cellIndex + 1;
+        for (let i = 0; i < table.rows.length; i++) {
+          const newCell = table.rows[i].insertCell(cellIndexAfter);
+          newCell.style.border = "1px solid #e5e7eb";
+          newCell.style.padding = "12px";
+          newCell.innerHTML = "&nbsp;";
+        }
+        break;
+      case 'deleteRow': {
+        const rowIndex = row.rowIndex;
+        const cellIndex = cell.cellIndex;
+        table.deleteRow(rowIndex);
+        if (table.rows.length === 0) {
+          table.remove();
+        } else {
+          const targetRowIndex = Math.min(rowIndex, table.rows.length - 1);
+          const targetRow = table.rows[targetRowIndex];
+          const targetCell = targetRow.cells[Math.min(cellIndex, targetRow.cells.length - 1)];
+          if (targetCell) {
+            const range = document.createRange();
+            range.selectNodeContents(targetCell);
+            range.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(range);
+            setSelectionVersion(v => v + 1);
+          }
+        }
+        break;
+      }
+      case 'deleteCol': {
+        const idx = cell.cellIndex;
+        const rowIndex = row.rowIndex;
+        for (let i = 0; i < table.rows.length; i++) {
+          table.rows[i].deleteCell(idx);
+        }
+        if (table.rows[0].cells.length === 0) {
+          table.remove();
+        } else {
+          const targetColIndex = Math.min(idx, table.rows[0].cells.length - 1);
+          const targetCell = table.rows[rowIndex]?.cells[targetColIndex] || table.rows[0].cells[targetColIndex];
+          if (targetCell) {
+            const range = document.createRange();
+            range.selectNodeContents(targetCell);
+            range.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(range);
+            setSelectionVersion(v => v + 1);
+          }
+        }
+        break;
+      }
+      case 'mergeRight':
+        if (cell.nextElementSibling) {
+          const nextCell = cell.nextElementSibling;
+          cell.colSpan = (cell.colSpan || 1) + (nextCell.colSpan || 1);
+          nextCell.remove();
+        }
+        break;
+      case 'deleteTable':
+        table.remove();
+        break;
+      default:
+        break;
+    }
+    triggerChange && triggerChange();
+  };
+
+  const insertTable = () => {
+    const rows = parseInt(tableRows) || 3;
+    const cols = parseInt(tableCols) || 3;
+    let tableHtml = '<table style="width: 100%; border-collapse: collapse; border: 1px solid #e5e7eb; margin: 16px 0;"><tbody>';
+    for (let i = 0; i < rows; i++) {
+      tableHtml += '<tr>';
+      for (let j = 0; j < cols; j++) {
+        tableHtml += '<td style="border: 1px solid #e5e7eb; padding: 12px; min-height: 20px;">&nbsp;</td>';
+      }
+      tableHtml += '</tr>';
+    }
+    tableHtml += '</tbody></table><p>&nbsp;</p>';
+    
+    if (selectionRangeRef.current) {
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(selectionRangeRef.current);
+    }
+
+    document.execCommand("insertHTML", false, tableHtml);
+    setTableModalOpen(false);
+    triggerChange && triggerChange();
+  };
+
+  const insertYoutube = () => {
+    let url = youtubeUrl.trim();
+    // More robust regex for various YouTube formats
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=|watch\?vi=|\&vi=)([^#\&\?]*).*/;
+    const match = url.match(regExp);
+    const videoId = (match && match[2].length === 11) ? match[2] : null;
+
+    if (videoId) {
+      if (editorRef.current) {
+        editorRef.current.focus();
+      }
+
+      if (selectionRangeRef.current) {
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(selectionRangeRef.current);
+      }
+
+      const embedHtml = `<div class="video-container">
+        <iframe 
+          src="https://www.youtube.com/embed/${videoId}" 
+          frameborder="0" 
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+          allowfullscreen
+        ></iframe>
+      </div><p>&nbsp;</p>`;
+      
+      try {
+        document.execCommand("insertHTML", false, embedHtml);
+      } catch (err) {
+        console.error("Failed to insert YouTube HTML:", err);
+        // Fallback: append to the end of the editor
+        if (editorRef.current) {
+          const div = document.createElement('div');
+          div.innerHTML = embedHtml;
+          editorRef.current.appendChild(div);
+        }
+      }
+    } else {
+      console.warn("Invalid YouTube URL or Video ID not found");
+    }
+    
+    setYoutubeModalOpen(false);
+    setYoutubeUrl("");
+    triggerChange && triggerChange();
   };
 
 
@@ -1001,6 +1207,7 @@ export default function RichTextEditor({
       onChange(html);
     }
   }, [onChange]);
+
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -1035,6 +1242,7 @@ export default function RichTextEditor({
   }, [disabled]);
 
   const handleEditorClick = useCallback((e) => {
+    setSelectionVersion(v => v + 1);
     // Check if the click is on a link
     const clickedLink = e.target.closest('a');
 
@@ -1043,6 +1251,15 @@ export default function RichTextEditor({
       e.stopPropagation();
       window.open(clickedLink.href, '_blank');
       return;
+    }
+
+    // NEW: Check if click is on an image for resizing
+    const clickedImg = e.target.closest('img');
+    if (clickedImg && !clickedImg.closest('.rte-modal')) {
+      setSelectedImage(clickedImg);
+      setResizeData({});
+    } else if (!e.target.closest('.resize-handle')) {
+      setSelectedImage(null);
     }
 
     // If disabled is true, prevent editing
@@ -1062,12 +1279,105 @@ export default function RichTextEditor({
     }
   }, [editable, disabled]);
 
+  const startResize = (e, direction) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const img = selectedImage;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startWidth = img.offsetWidth;
+    const startHeight = img.offsetHeight;
+
+    const onMouseMove = (moveEvent) => {
+      let newWidth = startWidth;
+      let newHeight = startHeight;
+
+      if (direction.includes('e')) newWidth = startWidth + (moveEvent.clientX - startX);
+      if (direction.includes('w')) newWidth = startWidth - (moveEvent.clientX - startX);
+      if (direction.includes('s')) newHeight = startHeight + (moveEvent.clientY - startY);
+      if (direction.includes('n')) newHeight = startHeight - (moveEvent.clientY - startY);
+
+      img.style.width = `${newWidth}px`;
+      img.style.height = `${newHeight}px`;
+      setResizeData({}); // Force re-render of handles
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      triggerChange();
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
+
+  const renderResizeHandles = () => {
+    if (!selectedImage || !editorRef.current) return null;
+    
+    const editorRect = editorRef.current.getBoundingClientRect();
+    const imgRect = selectedImage.getBoundingClientRect();
+    
+    // Relative position within editorRef using the more robust BoundingClientRect
+    const top = imgRect.top - editorRect.top + editorRef.current.scrollTop;
+    const left = imgRect.left - editorRect.left + editorRef.current.scrollLeft;
+    const width = imgRect.width;
+    const height = imgRect.height;
+
+    const handleStyles = {
+      position: 'absolute',
+      width: '10px',
+      height: '10px',
+      background: '#3b82f6',
+      border: '2px solid white',
+      borderRadius: '50%',
+      zIndex: 100,
+    };
+
+    const handles = [
+      { id: 'nw', style: { top: top - 5, left: left - 5, cursor: 'nw-resize' } },
+      { id: 'ne', style: { top: top - 5, left: left + width - 5, cursor: 'ne-resize' } },
+      { id: 'sw', style: { top: top + height - 5, left: left - 5, cursor: 'sw-resize' } },
+      { id: 'se', style: { top: top + height - 5, left: left + width - 5, cursor: 'se-resize' } },
+    ];
+
+    return (
+      <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+        <div style={{ position: 'absolute', top, left, width, height, border: '2px solid #3b82f6', pointerEvents: 'none' }} />
+        {handles.map(h => (
+          <div
+            key={h.id}
+            className="resize-handle"
+            onMouseDown={(e) => startResize(e, h.id)}
+            style={{ ...handleStyles, ...h.style, pointerEvents: 'auto' }}
+          />
+        ))}
+      </div>
+    );
+  };
+
+  
+
   return (
-    <div className="rte-main-wrapper" style={{ width: '100%' }}>
+    <div className="rte-main-wrapper" style={{ width: '100%', position: 'relative' }}>
       {label && <LabelComponent>{label}</LabelComponent>}
       <div
+        style={{ position: 'relative' }}
         className={!showBorder ? "" : "rte-container"}
         onClick={handleEditorClick}
+        onMouseOver={(e) => {
+          const table = e.target.closest('table');
+          if (table && editorRef.current.contains(table)) {
+            setHoveredTable(table);
+          }
+        }}
+        onMouseOut={(e) => {
+          const table = e.target.closest('table');
+          const related = e.relatedTarget;
+          if (table && (!related || !table.contains(related)) && !related?.closest('.rte-table-delete-hover')) {
+             setHoveredTable(null);
+          }
+        }}
         onDrop={handleDrop}
         onDragOver={(e) => {
           e.preventDefault();
@@ -1084,7 +1394,7 @@ export default function RichTextEditor({
                 e.preventDefault();
                 e.stopPropagation();
                 document.execCommand("bold");
-                triggerChange();
+                handleInput();
                 focus();
               }}
               className={`rte-toolbar-button ${isBold ? "active" : ""}`}
@@ -1100,7 +1410,7 @@ export default function RichTextEditor({
                 e.preventDefault();
                 e.stopPropagation();
                 document.execCommand("italic");
-                triggerChange();
+                handleInput();
                 focus();
               }}
               className={`rte-toolbar-button ${isItalic ? "active" : ""}`}
@@ -1116,7 +1426,7 @@ export default function RichTextEditor({
                 e.preventDefault();
                 e.stopPropagation();
                 document.execCommand("underline");
-                triggerChange();
+                handleInput();
                 focus();
               }}
               className={`rte-toolbar-button ${isUnderline ? "active" : ""}`}
@@ -1262,7 +1572,8 @@ export default function RichTextEditor({
 
             <div style={{ width: '1px', height: '20px', backgroundColor: '#e5e7eb', margin: '0 4px' }}></div>
 
-            {/* Actions */}
+            <div style={{ width: '1px', height: '20px', backgroundColor: '#e5e7eb', margin: '0 4px' }}></div>
+            
             <button
               type="button"
               title="Add Link"
@@ -1299,6 +1610,78 @@ export default function RichTextEditor({
                 <FaImage size={14} />
               )}
             </button>
+
+            <div style={{ width: '1px', height: '20px', backgroundColor: '#e5e7eb', margin: '0 4px' }}></div>
+
+            {/* Table */}
+            <button
+              type="button"
+              title="Insert Table"
+              className="rte-toolbar-button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                const sel = window.getSelection();
+                if (sel && sel.rangeCount > 0) {
+                  selectionRangeRef.current = sel.getRangeAt(0).cloneRange();
+                }
+                setTableModalOpen(true);
+              }}
+            >
+              <FaTable size={14} />
+            </button>
+
+            {/* YouTube */}
+            <button
+              type="button"
+              title="Embed YouTube Video"
+              className="rte-toolbar-button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                const sel = window.getSelection();
+                if (sel && sel.rangeCount > 0) {
+                  selectionRangeRef.current = sel.getRangeAt(0).cloneRange();
+                }
+                setYoutubeModalOpen(true);
+              }}
+            >
+              <FaYoutube size={14} />
+            </button>
+
+            {/* Table Actions (Conditional) */}
+            {(() => {
+              if (typeof window === "undefined") return null;
+              const sel = window.getSelection();
+              // Robust check: inside cell OR the table itself is selected
+              const isCell = sel && sel.rangeCount > 0 && sel.anchorNode && (findParentTag(sel.anchorNode, 'TD') || findParentTag(sel.anchorNode, 'TH'));
+              const isTable = sel && sel.rangeCount > 0 && sel.anchorNode && findParentTag(sel.anchorNode, 'TABLE');
+              
+              if (isCell || isTable) {
+                return (
+                  <>
+                    <div style={{ width: '1px', height: '20px', backgroundColor: '#e5e7eb', margin: '0 4px' }}></div>
+                    <button type="button" title="Add Row Above" className="rte-toolbar-button" onMouseDown={(e) => { e.preventDefault(); tableAction('addRowAbove'); }}>+R↑</button>
+                    <button type="button" title="Add Row Below" className="rte-toolbar-button" onMouseDown={(e) => { e.preventDefault(); tableAction('addRowBelow'); }}>+R↓</button>
+                    <button type="button" title="Add Col Before" className="rte-toolbar-button" onMouseDown={(e) => { e.preventDefault(); tableAction('addColBefore'); }}>+C←</button>
+                    <button type="button" title="Add Col After" className="rte-toolbar-button" onMouseDown={(e) => { e.preventDefault(); tableAction('addColAfter'); }}>+C→</button>
+                    
+                    <div style={{ width: '1px', height: '20px', backgroundColor: '#f3f4f6', margin: '0 4px' }}></div>
+                    
+                    <button type="button" title="Merge Cells (Right)" className="rte-toolbar-button" onMouseDown={(e) => { e.preventDefault(); tableAction('mergeRight'); }}><FaObjectGroup size={14} /></button>
+                    
+                    <button type="button" title="Delete Row" className="rte-toolbar-button rte-toolbar-button-danger " onMouseDown={(e) => { e.preventDefault(); tableAction('deleteRow'); }}>
+                      <FaTrash size={12} /> <span style={{ fontSize: '10px' }}>Row</span>
+                    </button>
+                    <button type="button" title="Delete Column" className="rte-toolbar-button rte-toolbar-button-danger" onMouseDown={(e) => { e.preventDefault(); tableAction('deleteCol'); }}>
+                      <FaTrash size={12} /> <span style={{ fontSize: '10px',marginRight:"5px" }}>Col</span>
+                    </button>
+                    <button type="button" title="Delete Table" className="rte-toolbar-button rte-toolbar-button-danger" onMouseDown={(e) => { e.preventDefault(); tableAction('deleteTable'); }}>
+                      <FaTrash size={14} /> <span style={{ fontWeight: '600' }}>Table</span>
+                    </button>
+                  </>
+                );
+              }
+              return null;
+            })()}
           </div>
         {/* Editor Content Area */}
         <div
@@ -1319,44 +1702,108 @@ export default function RichTextEditor({
           }}
           className="rte-content"
         />
+        {renderResizeHandles()}
+        
+        {/* Footer with Character/Word Count */}
+        <div className="rte-footer">
+          {(() => {
+            const text = editorRef.current?.innerText || "";
+            const cleanText = text.replace(/[\n\r]/g, ' ').trim();
+            const words = cleanText ? cleanText.split(/\s+/).length : 0;
+            const chars = text.length;
+            return (
+              <div className="rte-footer-content">
+                <span className="rte-footer-item"><b>{words}</b> words</span>
+                <span className="rte-footer-separator">•</span>
+                <span className="rte-footer-item"><b>{chars}</b> characters</span>
+              </div>
+            );
+          })()}
+        </div>
         {linkModalOpen && (
           <div className="rte-modal-overlay" onClick={cancelLink}>
             <div className="rte-modal" onClick={(e) => e.stopPropagation()}>
               <h3 className="rte-modal-title">Insert Link</h3>
-              <div className="rte-form-group">
-                <label className="rte-label">URL</label>
-                <input
-                  type="url"
-                  className="rte-input"
-                  value={linkUrl}
-                  onChange={(e) => setLinkUrl(e.target.value)}
-                  autoFocus
-                  placeholder="https://example.com"
-                />
+              <div className="rte-modal-divider"></div>
+              <div className="rte-modal-body">
+                <div className="rte-form-group">
+                  <label className="rte-label">Link Text</label>
+                  <input
+                    type="text"
+                    className="rte-input"
+                    placeholder="e.g. Google"
+                    value={linkText}
+                    onChange={(e) => setLinkText(e.target.value)}
+                  />
+                </div>
+                <div className="rte-form-group">
+                  <label className="rte-label">URL</label>
+                  <input
+                    type="text"
+                    className="rte-input"
+                    placeholder="https://example.com"
+                    value={linkUrl}
+                    onChange={(e) => setLinkUrl(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && confirmLink()}
+                    autoFocus
+                  />
+                </div>
               </div>
-              <div className="rte-form-group">
-                <label className="rte-label">Display Text</label>
-                <input
-                  type="text"
-                  className="rte-input"
-                  value={linkText}
-                  onChange={(e) => setLinkText(e.target.value)}
-                  placeholder="Link text"
-                />
+              <div className="rte-modal-divider" style={{ margin: '8px 0 20px 0' }}></div>
+              <div className="rte-modal-footer">
+                <button type="button" className="rte-btn rte-btn-secondary" onClick={cancelLink}>Cancel</button>
+                <button type="button" className="rte-btn rte-btn-primary" onClick={confirmLink} disabled={!linkUrl}>Insert</button>
               </div>
+            </div>
+          </div>
+        )}
 
+        {/* Table Modal */}
+        {tableModalOpen && (
+          <div className="rte-modal-overlay" onClick={() => setTableModalOpen(false)}>
+            <div className="rte-modal" onClick={(e) => e.stopPropagation()}>
+              <h3 className="rte-modal-title">Insert Table</h3>
+              <div className="rte-form-group">
+                <label className="rte-label">Rows</label>
+                <input type="number" className="rte-input" value={tableRows} onChange={(e) => setTableRows(e.target.value)} min="1" max="10" />
+              </div>
+              <div className="rte-form-group">
+                <label className="rte-label">Columns</label>
+                <input type="number" className="rte-input" value={tableCols} onChange={(e) => setTableCols(e.target.value)} min="1" max="10" />
+              </div>
               <div className="rte-modal-actions">
-                <button type="button" className="rte-button rte-button-secondary" onClick={cancelLink}>
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="rte-button rte-button-primary"
-                  onClick={confirmLink}
-                  disabled={!linkUrl}
-                >
-                  Insert
-                </button>
+                <button type="button" className="rte-button rte-button-secondary" onClick={() => setTableModalOpen(false)}>Cancel</button>
+                <button type="button" className="rte-button rte-button-primary" onClick={insertTable}>Insert</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* YouTube Modal */}
+        {youtubeModalOpen && (
+          <div className="rte-modal-overlay" onClick={() => setYoutubeModalOpen(false)}>
+            <div className="rte-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="rte-modal-header">
+                <h3 className="rte-modal-title">Embed YouTube Video</h3>
+              </div>
+              <div className="rte-form-group">
+                <label className="rte-label">Paste YouTube Video URL</label>
+                <input 
+                  type="text" 
+                  className="rte-input" 
+                  value={youtubeUrl} 
+                  onChange={(e) => setYoutubeUrl(e.target.value)} 
+                  placeholder="https://www.youtube.com/watch?v=..." 
+                  autoFocus 
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') insertYoutube();
+                    if (e.key === 'Escape') setYoutubeModalOpen(false);
+                  }}
+                />
+              </div>
+              <div className="rte-modal-actions">
+                <button type="button" className="rte-button rte-button-secondary" onClick={() => setYoutubeModalOpen(false)}>Cancel</button>
+                <button type="button" className="rte-button rte-button-primary" onClick={insertYoutube}>Embed Video</button>
               </div>
             </div>
           </div>
@@ -1399,7 +1846,7 @@ export default function RichTextEditor({
             type="button"
             className="rte-button rte-button-primary"
             onClick={() => {
-              handleChange && handleChange(html);
+              onChange && onChange(html);
               setEditable(false);
             }}
           >

@@ -90,3 +90,27 @@ export const FaLink = ({ className, size, color, style }) => {
   );
 };
 
+export const FaTable = ({ className, size, color, style }) => {
+  return (
+    <span className={className} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: size || '1em', color: color || 'inherit', ...style }} dangerouslySetInnerHTML={{ __html: `<svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 512 512" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M64 448c-35.3 0-64-28.7-64-64V128c0-35.3 28.7-64 64-64H448c35.3 0 64 28.7 64 64V384c0 35.3-28.7 64-64 64H64zm96-288H64v64h96v-64zm0 96H64v64h96v-64zm0 96H64c0 17.7 14.3 32 32 32h64v-32zm128-192h-96v64h96v-64zm0 96h-96v64h96v-64zm0 96h-96v96h96v-96zm160-192h-96v64h96v-64zm0 96h-96v64h96v-64zm0 96h-96v64h64c17.7 0 32-14.3 32-32v-32z"></path></svg>` }} />
+  );
+};
+
+export const FaYoutube = ({ className, size, color, style }) => {
+  return (
+    <span className={className} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: size || '1em', color: color || 'inherit', ...style }} dangerouslySetInnerHTML={{ __html: `<svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 576 512" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M549.655 124.083c-6.281-23.65-24.787-42.276-48.284-48.597C458.781 64 288 64 288 64S117.22 64 74.629 75.486c-23.497 6.322-42.003 24.947-48.284 48.597-11.412 42.867-11.412 132.305-11.412 132.305s0 89.438 11.412 132.305c6.281 23.65 24.787 41.5 48.284 47.821C117.22 448 288 448 288 448s170.781 0 213.371-11.486c23.497-6.321 42.003-24.171 48.284-47.821 11.412-42.867 11.412-132.305 11.412-132.305s0-89.438-11.412-132.305zm-317.51 213.508V175.185l142.739 81.205-142.739 81.201z"></path></svg>` }} />
+  );
+};
+
+export const FaObjectGroup = ({ className, size, color, style }) => {
+  return (
+    <span className={className} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: size || '1em', color: color || 'inherit', ...style }} dangerouslySetInnerHTML={{ __html: `<svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 512 512" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M480 320h-48v48c0 17.7-14.3 32-32 32h-48v32c0 26.5-21.5 48-48 48H48c-26.5 0-48-21.5-48-48V160c0-26.5 21.5-48 48-48h32v-48c0-17.7 14.3-32 32-32h48V0h32c26.5 0 48 21.5 48 48v48h48c17.7 0 32 14.3 32 32v48h32c26.5 0 48 21.5 48 48v128c0 26.5-21.5 48-48 48z"></path></svg>` }} />
+  );
+};
+
+export const FaTrash = ({ className, size, color, style }) => {
+  return (
+    <span className={className} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: size || '1em', color: color || 'inherit', ...style }} dangerouslySetInnerHTML={{ __html: `<svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 448 512" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M432 32H312l-9.4-18.7A24 24 0 0 0 281.1 0H166.8a23.72 23.72 0 0 0-21.4 13.3L136 32H16A16 16 0 0 0 0 48v32a16 16 0 0 0 16 16h416a16 16 0 0 0 16-16V48a16 16 0 0 0-16-16zM53.2 467a48 48 0 0 0 47.9 45h245.8a48 48 0 0 0 47.9-45L416 128H32z"></path></svg>` }} />
+  );
+};
+
