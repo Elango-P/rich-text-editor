@@ -26,7 +26,7 @@ export default function RichTextEditor({
   showEditButton,
   onBlur,
   disabled = false,
-  editable: defaultEditable = false,
+  editable: initialEditable = false,
   value,
   isLoading,
   isList = false,
@@ -51,7 +51,13 @@ export default function RichTextEditor({
   const [linkUrl, setLinkUrl] = useState("");
   const [linkText, setLinkText] = useState("");
   const selectionRangeRef = useRef(null);
-  const [editable, setEditable] = useState(defaultEditable);
+  const [editable, setEditable] = useState(initialEditable);
+  const lastSynchronizedHtmlRef = useRef("");
+
+  useEffect(() => {
+    setEditable(initialEditable);
+  }, [initialEditable]);
+
 
   // NEW: Track current list type for dropdown
   const [currentListType, setCurrentListType] = useState(null);
@@ -82,8 +88,20 @@ export default function RichTextEditor({
   const [selectionVersion, setSelectionVersion] = useState(0);
 
   const [selectedImage, setSelectedImage] = useState(null);
-  const [resizeData, setResizeData] = useState(null);
+  const [metrics, setMetrics] = useState({ words: 0, chars: 0 });
+
+  const updateMetrics = useCallback(() => {
+    if (!editorRef.current) return;
+    // Calculate metrics immediately but outside of render path
+    const text = editorRef.current.innerText || "";
+    const cleanText = text.replace(/[\n\r]/g, ' ').trim();
+    const words = cleanText ? cleanText.split(/\s+/).length : 0;
+    const chars = text.length;
+    setMetrics({ words, chars });
+  }, []);
+
   const openImageModal = (url) => {
+
     if (editorRef.current) {
       scrollTopRef.current = editorRef.current.scrollTop;
     }
@@ -166,7 +184,7 @@ export default function RichTextEditor({
         const wrapper = deleteBtn.closest('.image-container');
         if (wrapper && wrapper.parentNode) {
           wrapper.parentNode.removeChild(wrapper);
-          triggerChange();
+          triggerChange && triggerChange();
         }
       }
     };
@@ -178,63 +196,69 @@ export default function RichTextEditor({
         editor.removeEventListener('click', handleClick);
       };
     }
-  }, [editable]);
+    // Removed dependency on editable to minimize listener churn
+  }, []);
+
 
   useEffect(() => {
-    if (editorRef.current && value) {
+    if (editorRef.current && value && value !== lastSynchronizedHtmlRef.current) {
       requestAnimationFrame(() => processExistingImages(editorRef.current));
     }
   }, [value]);
 
+
   // Runs whenever editable changes (toggles delete icon visibility)
   useEffect(() => {
     processExistingImages(editorRef.current, editable);
-  }, [html, editable]);
+  }, [editable]);
+
   useEffect(() => {
-    // Only update if value is a string and different from current html
-    if (value) {
+    // Only update if value is different from our last known synced state
+    if (value && value !== lastSynchronizedHtmlRef.current) {
       try {
-        // Check if value is a Draft.js content state (either stringified or object)
-        if (value && isValidDraftFormat(value)) {
-          const htmlContent = draftBlocksToHTML(value);
-          setHtml(htmlContent);
-          if (editorRef.current) {
-            editorRef.current.innerHTML = htmlContent;
-          }
+        let newContent = "";
+        
+        // Check if value is a Draft.js content state
+        if (isValidDraftFormat(value)) {
+          newContent = draftBlocksToHTML(value);
         } else if (typeof value === 'string') {
-          // Unescape HTML entities before setting the content
-          const unescapedValue = unescapeHtml(value);
-          setHtml(unescapedValue);
-          if (editorRef.current) {
-            editorRef.current.innerHTML = unescapedValue || '';
+          // If value is already what we have in HTML state, skip unescaping
+          if (value === html) {
+             lastSynchronizedHtmlRef.current = value;
+             return;
           }
+          newContent = unescapeHtml(value);
+        }
+
+        if (newContent && newContent !== html) {
+          lastSynchronizedHtmlRef.current = value;
+          setHtml(newContent);
+          if (editorRef.current && editorRef.current.innerHTML !== newContent) {
+            editorRef.current.innerHTML = newContent;
+          }
+          updateMetrics();
         }
       } catch (e) {
         console.error('Error processing editor content:', e);
-        // Fallback to raw value if parsing fails
-        const unescapedValue = typeof value === 'string' ? unescapeHtml(value) : value;
-        setHtml(unescapedValue);
-        if (editorRef.current) {
-          editorRef.current.innerHTML = unescapedValue || '';
-        }
       }
-    } else {
+    } else if (!value && html) {
       setHtml('');
+      lastSynchronizedHtmlRef.current = "";
       if (editorRef.current) {
         editorRef.current.innerHTML = '';
+        updateMetrics();
       }
     }
-  }, [!isList]);
+  }, [value, initialEditable, updateMetrics]);
 
-  // Call onChange whenever html state updates
-  useEffect(() => {
-    onChange && onChange(html);
-  }, [html, onChange]);
+
   // Trigger change manually
   const triggerChange = useCallback(() => {
     const next = getCleanHtml();
     setHtml(next);
-  }, []);
+    lastSynchronizedHtmlRef.current = next;
+    onChange && onChange(next);
+  }, [onChange]);
 
   const handleChange = () => {
     if (!editorRef.current) return;
@@ -375,34 +399,62 @@ export default function RichTextEditor({
   }
 
 
-  // Listen for selection changes globally to update styles and list type
+  // Listen for selection changes globally to update styles and list type in one pass
   useEffect(() => {
-    document.addEventListener("selectionchange", detectListType);
-    document.addEventListener("selectionchange", updateStyleStates);
+    const handleGlobalSelectionSync = () => {
+      // Only sync if the editor has focus
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount || !editorRef.current?.contains(sel.anchorNode)) {
+        return;
+      }
 
-    const handleSelectionChange = () => {
-      const selection = window.getSelection();
-      if (!selection.rangeCount) return;
+      // 1. Detect List Type
+      let node = sel.anchorNode;
+      let listFound = null;
+      while (node && node !== editorRef.current) {
+        if (node.nodeName === "OL") { listFound = "ordered"; break; }
+        if (node.nodeName === "UL") { listFound = "unordered"; break; }
+        node = node.parentNode;
+      }
+      setCurrentListType(listFound);
 
-      const range = selection.getRangeAt(0);
+      // 2. Update Style States
+      const container = sel.anchorNode.nodeType === 3 ? sel.anchorNode.parentNode : sel.anchorNode;
+      const computedAlign = window.getComputedStyle(container).textAlign;
+      setActiveAlign(computedAlign);
+      
+      const range = sel.getRangeAt(0);
+      if (range.collapsed) {
+        setIsBold(isParentStyle(container, "B", "STRONG", "bold"));
+        setIsItalic(isParentStyle(container, "I", "EM", "italic"));
+        setIsUnderline(isParentStyle(container, "U", "underline"));
+        const computedColor = window.getComputedStyle(container).color;
+        setFontColor(rgbToHex(computedColor));
+      } else {
+        setIsBold(document.queryCommandState("bold"));
+        setIsItalic(document.queryCommandState("italic"));
+        setIsUnderline(document.queryCommandState("underline"));
+        const computedColor = window.getComputedStyle(container).color;
+        setFontColor(rgbToHex(computedColor));
+      }
+
+      // 3. Current Font Size
       const element = range.startContainer.parentElement.closest('[style*="font-size"]');
-
       if (element) {
         const fontSize = window.getComputedStyle(element).fontSize;
         const sizeValue = fontSize ? parseInt(fontSize) : 16;
         setCurrentFontSize(sizeValue.toString());
       } else {
-        setCurrentFontSize("16"); // Default size
+        setCurrentFontSize("16");
       }
     };
 
-    document.addEventListener('selectionchange', handleSelectionChange);
+    document.addEventListener("selectionchange", handleGlobalSelectionSync);
     return () => {
-      document.removeEventListener("selectionchange", detectListType);
-      document.removeEventListener("selectionchange", updateStyleStates);
-      document.removeEventListener('selectionchange', handleSelectionChange);
+      document.removeEventListener("selectionchange", handleGlobalSelectionSync);
     };
   }, []);
+
 
   const focus = () => editorRef.current && editorRef.current.focus();
 
@@ -661,10 +713,16 @@ export default function RichTextEditor({
     if (!container) return;
 
     container.querySelectorAll("img").forEach((img) => {
-      // REMOVE the old wrapper if it exists so we can re-add
-      const oldWrapper = img.closest(".image-container");
-      if (oldWrapper) {
-        oldWrapper.replaceWith(img); // unwrap
+      // ONLY wrap if it's not already inside a wrapper
+      const existingWrapper = img.closest(".image-container");
+      if (existingWrapper) {
+        // Just update existing wrapper state if needed
+        existingWrapper.style.cursor = editable ? 'pointer' : 'default';
+        const deleteBtn = existingWrapper.querySelector('.image-delete-button');
+        if (deleteBtn) {
+          deleteBtn.style.display = editable ? 'flex' : 'none';
+        }
+        return;
       }
 
       const wrapper = document.createElement("div");
@@ -713,12 +771,17 @@ export default function RichTextEditor({
     });
   };
 
+
   useEffect(() => {
     if (editorRef.current && value) {
       requestAnimationFrame(() => processExistingImages(editorRef.current));
     }
   }, [value]);
 
+  /* 
+     Advanced Tip: Use the 'onImageUpload' prop to handle file uploads to a server 
+     instead of using base64. If 'onImageUpload' is provided, it should return a URL string.
+  */
   const insertImage = async (dataUrl, fileName) => {
     try {
       if (editable) {
@@ -1231,12 +1294,14 @@ export default function RichTextEditor({
     focus();
   };
   const handleInput = useCallback(() => {
-    if (onChange && editorRef.current) {
-      const html = editorRef.current.innerHTML;
-      setHtml(html);
-      onChange(html);
+    if (editorRef.current) {
+      const next = editorRef.current.innerHTML;
+      setHtml(next);
+      lastSynchronizedHtmlRef.current = next;
+      onChange && onChange(next);
+      updateMetrics();
     }
-  }, [onChange]);
+  }, [onChange, updateMetrics]);
 
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
@@ -1287,10 +1352,10 @@ export default function RichTextEditor({
     const clickedImg = e.target.closest('img');
     if (clickedImg && !clickedImg.closest('.rte-modal')) {
       setSelectedImage(clickedImg);
-      setResizeData({});
-    } else if (!e.target.closest('.resize-handle')) {
+    } else if (!e.target.closest('.rte-image-toolbar')) {
       setSelectedImage(null);
     }
+
 
     // If disabled is true, prevent editing
     if (disabled === true) {
@@ -1309,79 +1374,65 @@ export default function RichTextEditor({
     }
   }, [editable, disabled]);
 
-  const startResize = (e, direction) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const img = selectedImage;
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const startWidth = img.offsetWidth;
-    const startHeight = img.offsetHeight;
+  const renderImageToolbar = () => {
+    if (!selectedImage || !editorRef.current || !editable) return null;
 
-    const onMouseMove = (moveEvent) => {
-      let newWidth = startWidth;
-      let newHeight = startHeight;
-
-      if (direction.includes('e')) newWidth = startWidth + (moveEvent.clientX - startX);
-      if (direction.includes('w')) newWidth = startWidth - (moveEvent.clientX - startX);
-      if (direction.includes('s')) newHeight = startHeight + (moveEvent.clientY - startY);
-      if (direction.includes('n')) newHeight = startHeight - (moveEvent.clientY - startY);
-
-      img.style.width = `${newWidth}px`;
-      img.style.height = `${newHeight}px`;
-      setResizeData({}); // Force re-render of handles
-    };
-
-    const onMouseUp = () => {
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
-      triggerChange();
-    };
-
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-  };
-
-  const renderResizeHandles = () => {
-    if (!selectedImage || !editorRef.current) return null;
-    
     const editorRect = editorRef.current.getBoundingClientRect();
     const imgRect = selectedImage.getBoundingClientRect();
-    
-    // Relative position within editorRef using the more robust BoundingClientRect
+
     const top = imgRect.top - editorRect.top + editorRef.current.scrollTop;
     const left = imgRect.left - editorRect.left + editorRef.current.scrollLeft;
     const width = imgRect.width;
-    const height = imgRect.height;
 
-    const handleStyles = {
-      position: 'absolute',
-      width: '10px',
-      height: '10px',
-      background: '#3b82f6',
-      border: '2px solid white',
-      borderRadius: '50%',
-      zIndex: 100,
+    const handleAlignment = (align) => {
+      const wrapper = selectedImage.closest('.image-container');
+      if (wrapper) {
+        // Remove all alignment classes first
+        wrapper.classList.remove('image-align-left', 'image-align-center', 'image-align-right');
+        // Add the new alignment class
+        wrapper.classList.add(`image-align-${align}`);
+        selectedImage.setAttribute('data-align', align);
+        triggerChange();
+      }
     };
 
-    const handles = [
-      { id: 'nw', style: { top: top - 5, left: left - 5, cursor: 'nw-resize' } },
-      { id: 'ne', style: { top: top - 5, left: left + width - 5, cursor: 'ne-resize' } },
-      { id: 'sw', style: { top: top + height - 5, left: left - 5, cursor: 'sw-resize' } },
-      { id: 'se', style: { top: top + height - 5, left: left + width - 5, cursor: 'se-resize' } },
-    ];
+    const removeImage = () => {
+      const wrapper = selectedImage.closest('.image-container');
+      if (wrapper) {
+        wrapper.remove();
+        setSelectedImage(null);
+        triggerChange();
+      }
+    };
+
+    const toggleSize = () => {
+      const wrapper = selectedImage.closest('.image-container');
+      if (wrapper) {
+        const isSmall = wrapper.classList.contains('image-small');
+        if (isSmall) {
+          wrapper.classList.remove('image-small');
+        } else {
+          wrapper.classList.add('image-small');
+        }
+        triggerChange();
+      }
+    };
 
     return (
-      <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-        <div style={{ position: 'absolute', top, left, width, height, border: '2px solid #3b82f6', pointerEvents: 'none' }} />
-        {handles.map(h => (
-          <div
-            key={h.id}
-            className="resize-handle"
-            onMouseDown={(e) => startResize(e, h.id)}
-            style={{ ...handleStyles, ...h.style, pointerEvents: 'auto' }}
-          />
-        ))}
+      <div 
+        className="rte-image-toolbar"
+        style={{ 
+          position: 'absolute', 
+          top: Math.max(0, top - 45), 
+          left: Math.max(0, left + width / 2 - 80),
+          zIndex: 1000
+        }}
+      >
+        <button type="button" onClick={() => handleAlignment('left')} title="Align Left">L</button>
+        <button type="button" onClick={() => handleAlignment('center')} title="Align Center">C</button>
+        <button type="button" onClick={() => handleAlignment('right')} title="Align Right">R</button>
+        <button type="button" onClick={toggleSize} title="Toggle 50% Width">50%</button>
+        <button type="button" onClick={removeImage} className="danger" title="Remove Image">×</button>
       </div>
     );
   };
@@ -1747,23 +1798,16 @@ export default function RichTextEditor({
           }}
           className="rte-content"
         />
-        {renderResizeHandles()}
+        {renderImageToolbar()}
+
         
         {/* Footer with Character/Word Count */}
         <div className="rte-footer">
-          {(() => {
-            const text = editorRef.current?.innerText || "";
-            const cleanText = text.replace(/[\n\r]/g, ' ').trim();
-            const words = cleanText ? cleanText.split(/\s+/).length : 0;
-            const chars = text.length;
-            return (
-              <div className="rte-footer-content">
-                <span className="rte-footer-item"><b>{words}</b> words</span>
-                <span className="rte-footer-separator">•</span>
-                <span className="rte-footer-item"><b>{chars}</b> characters</span>
-              </div>
-            );
-          })()}
+          <div className="rte-footer-content">
+            <span className="rte-footer-item"><b>{metrics.words}</b> words</span>
+            <span className="rte-footer-separator">•</span>
+            <span className="rte-footer-item"><b>{metrics.chars}</b> characters</span>
+          </div>
         </div>
         {linkModalOpen && (
           <div className="rte-modal-overlay" onClick={cancelLink}>

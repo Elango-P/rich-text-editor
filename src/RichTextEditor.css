@@ -313,47 +313,57 @@
 /* Image Handling */
 .image-container {
   position: relative;
-  background: #f9fafb;
-  border-radius: 12px;
-  border: 1px solid #f3f4f6;
+  display: inline-block;
   margin: 15px;
-  box-sizing: border-box;
-  transition: all 0.2s ease;
+  line-height: 0;
   max-width: 100%;
 }
 
 .image-container.image-align-center {
   display: block;
   margin: 24px auto;
-  width: 100%;
-  height: 300px;
+  text-align: center;
 }
 
 .image-container.image-align-left,
 .image-container.image-align-right {
-  display: inline-block;
-  width: 350px;
-  height: 300px;
+  display: block;
 }
 
 .image-container.image-align-left {
-  float: left;
-  margin-right: 24px;
+  margin: 15px 0;
 }
 
 .image-container.image-align-right {
-  float: right;
-  margin-left: 24px;
+  margin: 15px 0;
+}
+
+.image-container.image-align-left img {
+  margin-left: 0 !important;
+  margin-right: auto !important;
+}
+
+.image-container.image-align-center img {
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+.image-container.image-align-right img {
+  margin-left: auto !important;
+  margin-right: 0 !important;
 }
 
 .image-container img {
-  width: 100%;
-  height: 100%;
+  width: auto;
+  max-width: 100%;
+  height: auto;
   display: block;
-  margin: 0 auto;
-  object-fit: contain;
+  margin: 0; /* Removed global center */
   border-radius: 12px;
-  background: #ffffff;
+}
+
+.image-container.image-small img {
+  width: 50% !important;
 }
 
 .image-delete-button {
@@ -417,6 +427,48 @@
 
 .rte-table-delete-btn:active {
   transform: scale(0.95);
+}
+
+/* Image Toolbar */
+.rte-image-toolbar {
+  display: flex;
+  background: white !important;
+  border: 1px solid #e5e7eb !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+  padding: 4px !important;
+  gap: 4px !important;
+  pointer-events: auto !important;
+}
+
+.rte-image-toolbar button {
+  min-width: 32px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: #4b5563;
+  cursor: pointer;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 11px;
+  transition: all 0.15s ease;
+  padding: 0 4px;
+}
+
+.rte-image-toolbar button:hover {
+  background-color: #f3f4f6;
+  color: #111827;
+}
+
+.rte-image-toolbar button.danger {
+  color: #ef4444 !important;
+}
+
+.rte-image-toolbar button.danger:hover {
+  background-color: #fef2f2 !important;
 }
 
 .image-container:after {

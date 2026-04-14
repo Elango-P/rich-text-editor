@@ -34,7 +34,10 @@ export default {
     babel({
       babelHelpers: "bundled",
       exclude: "node_modules/**",
-      presets: ["@babel/preset-env", "@babel/preset-react"],
+      presets: [
+        ["@babel/preset-env", { targets: "defaults, not ie 11, node 14" }],
+        "@babel/preset-react"
+      ],
       extensions: [".js", ".jsx"],
     }),
   ],
