@@ -38,10 +38,6 @@ export default function RichTextEditor({
   onImageUpload,
 }) {
 
-  if (isLoading) {
-    return <Spinner />;
-  }
-
   const editorRef = useRef(null);
   const fileInputRef = useRef(null);
   const scrollTopRef = useRef(0);
@@ -52,6 +48,7 @@ export default function RichTextEditor({
   const [linkText, setLinkText] = useState("");
   const selectionRangeRef = useRef(null);
   const [editable, setEditable] = useState(initialEditable);
+  const [editorFocused, setEditorFocused] = useState(false);
   const lastSynchronizedHtmlRef = useRef("");
 
   useEffect(() => {
@@ -173,44 +170,26 @@ export default function RichTextEditor({
   }, [imageModalOpen]);
 
   useEffect(() => {
-    const handleClick = (e) => {
-      // Trigger selection update for toolbar reactivity
-      setSelectionVersion(v => v + 1);
-
-      const deleteBtn = e.target.closest('button[title="Remove image"]');
-      if (deleteBtn && editable) {
-        e.preventDefault();
-        e.stopPropagation();
-        const wrapper = deleteBtn.closest('.image-container');
-        if (wrapper && wrapper.parentNode) {
-          wrapper.parentNode.removeChild(wrapper);
-          triggerChange && triggerChange();
-        }
-      }
-    };
-
-    const editor = editorRef.current;
-    if (editor) {
-      editor.addEventListener('click', handleClick);
-      return () => {
-        editor.removeEventListener('click', handleClick);
-      };
-    }
-    // Removed dependency on editable to minimize listener churn
-  }, []);
-
-
-  useEffect(() => {
     if (editorRef.current && value && value !== lastSynchronizedHtmlRef.current) {
-      requestAnimationFrame(() => processExistingImages(editorRef.current));
+      requestAnimationFrame(() => processExistingMedia(editorRef.current));
     }
   }, [value]);
 
 
   // Runs whenever editable changes (toggles delete icon visibility)
   useEffect(() => {
-    processExistingImages(editorRef.current, editable);
+    if (!editable) {
+      setEditorFocused(false);
+    }
+    processExistingMedia(editorRef.current);
   }, [editable]);
+
+  useEffect(() => {
+    if (!editorRef.current) return;
+    editorRef.current.querySelectorAll(".image-container, .video-container").forEach((container) => {
+      updateMediaControlVisibility(container);
+    });
+  }, [editorFocused, editable]);
 
   useEffect(() => {
     // Only update if value is different from our last known synced state
@@ -236,6 +215,7 @@ export default function RichTextEditor({
           if (editorRef.current && editorRef.current.innerHTML !== newContent) {
             editorRef.current.innerHTML = newContent;
           }
+          requestAnimationFrame(() => processExistingMedia(editorRef.current));
           updateMetrics();
         }
       } catch (e) {
@@ -252,6 +232,19 @@ export default function RichTextEditor({
   }, [value, initialEditable, updateMetrics]);
 
 
+  const processExistingMedia = (container) => {
+    if (!container) return;
+    processExistingImages(container);
+    processExistingVideos(container);
+  };
+
+  const getCleanHtml = () => {
+    if (!editorRef.current) return "";
+    const clone = editorRef.current.cloneNode(true);
+    stripEditorChrome(clone);
+    return clone.innerHTML;
+  };
+
   // Trigger change manually
   const triggerChange = useCallback(() => {
     const next = getCleanHtml();
@@ -262,16 +255,7 @@ export default function RichTextEditor({
 
   const handleChange = () => {
     if (!editorRef.current) return;
-
-    // Clone editor content
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = editorRef.current.innerHTML;
-
-    // Remove delete buttons from the clone
-    tempDiv.querySelectorAll('button[title="Remove image"]').forEach(btn => btn.remove());
-
-    // Send cleaned HTML to onBlur
-    onBlur && onBlur(tempDiv.innerHTML);
+    onBlur && onBlur(getCleanHtml());
   };
 
   // Detect if selection is inside a list (ol or ul)
@@ -398,6 +382,250 @@ export default function RichTextEditor({
     );
   }
 
+  const getColorAtCursor = () => {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !editorRef.current) return null;
+
+    let node = sel.anchorNode;
+    if (node.nodeType === 3) node = node.parentNode;
+
+    while (node && node !== editorRef.current) {
+      if (node.nodeType === 1) {
+        if (node.style && node.style.color) {
+          return rgbToHex(node.style.color);
+        }
+        if (node.tagName === "FONT" && node.getAttribute("color")) {
+          return node.getAttribute("color");
+        }
+      }
+      node = node.parentNode;
+    }
+
+    const computedColor = window.getComputedStyle(
+      sel.anchorNode.nodeType === 3 ? sel.anchorNode.parentNode : sel.anchorNode
+    ).color;
+    return rgbToHex(computedColor);
+  };
+
+  const stripEditorChrome = (root) => {
+    root.querySelectorAll(
+      ".image-delete-button, .video-delete-button, .video-edit-overlay, .media-resize-handles, .media-resize-handle"
+    ).forEach((element) => element.remove());
+    return root;
+  };
+
+  const getMediaSizeLimits = () => {
+    const maxWidth = editorRef.current
+      ? editorRef.current.getBoundingClientRect().width - 24
+      : 800;
+    return {
+      minWidth: 120,
+      minHeight: 80,
+      maxWidth,
+      maxHeight: 720,
+    };
+  };
+
+  const ensureImageMediaFrame = (imageContainer) => {
+    if (!imageContainer) return null;
+
+    let frame = imageContainer.querySelector(":scope > .image-media-frame");
+    if (frame) return frame;
+
+    frame = document.createElement("div");
+    frame.className = "image-media-frame";
+
+    ["width", "height", "marginLeft", "marginTop", "maxWidth"].forEach((prop) => {
+      if (imageContainer.style[prop]) {
+        frame.style[prop] = imageContainer.style[prop];
+        imageContainer.style[prop] = "";
+      }
+    });
+
+    if (imageContainer.dataset.explicitHeight) {
+      frame.dataset.explicitHeight = imageContainer.dataset.explicitHeight;
+      delete imageContainer.dataset.explicitHeight;
+    }
+
+    const children = Array.from(imageContainer.children);
+    imageContainer.appendChild(frame);
+    children.forEach((child) => frame.appendChild(child));
+
+    return frame;
+  };
+
+  const getImageMediaTarget = (imageContainer) =>
+    ensureImageMediaFrame(imageContainer) || imageContainer;
+
+  const applyImageMediaSize = (frame, width, height, edge) => {
+    const img = frame.querySelector("img");
+    const isVertical = edge === "top" || edge === "bottom";
+
+    frame.style.width = `${Math.round(width)}px`;
+    frame.style.maxWidth = "100%";
+
+    if (isVertical) {
+      frame.style.height = `${Math.round(height)}px`;
+      frame.dataset.explicitHeight = "true";
+      if (img) {
+        img.style.width = "100%";
+        img.style.height = "100%";
+        img.style.objectFit = "contain";
+      }
+      return;
+    }
+
+    if (!frame.dataset.explicitHeight) {
+      frame.style.height = "";
+    }
+
+    if (img) {
+      img.style.width = "100%";
+      if (frame.dataset.explicitHeight) {
+        img.style.height = "100%";
+        img.style.objectFit = "contain";
+      } else {
+        img.style.height = "auto";
+        img.style.objectFit = "";
+      }
+    }
+  };
+
+  const applyVideoMediaSize = (container, width, height) => {
+    container.style.paddingBottom = "0";
+    container.style.width = `${Math.round(width)}px`;
+    container.style.maxWidth = "100%";
+    container.style.height = `${Math.round(height)}px`;
+  };
+
+  const attachMediaResizeHandle = (container) => {
+    if (!container || container.querySelector(".media-resize-handles")) return;
+
+    const isVideo = container.classList.contains("video-container");
+    const resizeTarget = isVideo ? container : getImageMediaTarget(container);
+    if (!resizeTarget) return;
+
+    const handlesWrapper = document.createElement("div");
+    handlesWrapper.className = "media-resize-handles";
+    handlesWrapper.setAttribute("contenteditable", "false");
+
+    const edges = [
+      { edge: "left", title: "Drag to resize width" },
+      { edge: "right", title: "Drag to resize width" },
+      { edge: "top", title: "Drag to resize height" },
+      { edge: "bottom", title: "Drag to resize height" },
+    ];
+
+    edges.forEach(({ edge, title }) => {
+      const handle = document.createElement("div");
+      handle.className = `media-resize-handle media-resize-handle-${edge}`;
+      handle.title = title;
+      handle.setAttribute("contenteditable", "false");
+      handle.dataset.edge = edge;
+
+      handle.addEventListener("mousedown", (event) => {
+        if (!editable) return;
+        event.preventDefault();
+        event.stopPropagation();
+
+        const limits = getMediaSizeLimits();
+        const rect = resizeTarget.getBoundingClientRect();
+        const startX = event.clientX;
+        const startY = event.clientY;
+        const startWidth = rect.width;
+        const startHeight = rect.height;
+        const startMarginLeft = Number.parseFloat(resizeTarget.style.marginLeft) || 0;
+        const startMarginTop = Number.parseFloat(resizeTarget.style.marginTop) || 0;
+
+        if (isVideo) {
+          resizeTarget.style.paddingBottom = "0";
+        }
+
+        const onMouseMove = (moveEvent) => {
+          const deltaX = moveEvent.clientX - startX;
+          const deltaY = moveEvent.clientY - startY;
+          let nextWidth = startWidth;
+          let nextHeight = startHeight;
+
+          if (edge === "right") {
+            nextWidth = startWidth + deltaX;
+          } else if (edge === "left") {
+            nextWidth = startWidth - deltaX;
+          } else if (edge === "bottom") {
+            nextHeight = startHeight + deltaY;
+          } else if (edge === "top") {
+            nextHeight = startHeight - deltaY;
+          }
+
+          nextWidth = Math.max(limits.minWidth, Math.min(nextWidth, limits.maxWidth));
+          nextHeight = Math.max(limits.minHeight, Math.min(nextHeight, limits.maxHeight));
+
+          if (edge === "left") {
+            resizeTarget.style.marginLeft = `${Math.round(startMarginLeft + (startWidth - nextWidth))}px`;
+          }
+
+          if (edge === "top") {
+            resizeTarget.style.marginTop = `${Math.round(startMarginTop + (startHeight - nextHeight))}px`;
+          }
+
+          if (isVideo) {
+            applyVideoMediaSize(resizeTarget, nextWidth, nextHeight);
+          } else {
+            applyImageMediaSize(resizeTarget, nextWidth, nextHeight, edge);
+          }
+        };
+
+        const onMouseUp = () => {
+          document.removeEventListener("mousemove", onMouseMove);
+          document.removeEventListener("mouseup", onMouseUp);
+          triggerChange();
+        };
+
+        document.addEventListener("mousemove", onMouseMove);
+        document.addEventListener("mouseup", onMouseUp);
+      });
+
+      handlesWrapper.appendChild(handle);
+    });
+
+    resizeTarget.appendChild(handlesWrapper);
+  };
+
+  const handleEditorFocus = () => {
+    setEditorFocused(true);
+  };
+
+  const handleEditorBlur = () => {
+    requestAnimationFrame(() => {
+      if (!editorRef.current?.contains(document.activeElement)) {
+        setEditorFocused(false);
+      }
+    });
+  };
+
+  const updateMediaControlVisibility = (container) => {
+    const handles = container.querySelector(".media-resize-handles");
+    if (handles instanceof HTMLElement) {
+      handles.style.display = editable ? "block" : "none";
+      handles.style.pointerEvents = editable ? "auto" : "none";
+    }
+  };
+
+  const createMediaDeleteButton = (title, className, onRemove) => {
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.innerHTML = "×";
+    deleteBtn.className = className;
+    deleteBtn.title = title;
+    deleteBtn.setAttribute("contenteditable", "false");
+    deleteBtn.onclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onRemove();
+    };
+    return deleteBtn;
+  };
+
 
   // Listen for selection changes globally to update styles and list type in one pass
   useEffect(() => {
@@ -465,6 +693,8 @@ export default function RichTextEditor({
   };
 
   const [fontColor, setFontColor] = useState("#000000");
+
+  const getActiveTextColor = () => getColorAtCursor() || fontColor;
 
   const handleColorChange = (color) => {
     setFontColor(color);
@@ -694,6 +924,7 @@ export default function RichTextEditor({
       setVideoModalOpen(false);
       setVideoUrl("");
       triggerChange && triggerChange();
+      requestAnimationFrame(() => processExistingMedia(editorRef.current));
     } else {
       console.warn("Invalid Video URL or Platform not supported");
     }
@@ -709,58 +940,100 @@ export default function RichTextEditor({
     e.target.value = null;
   };
 
+  const processExistingVideos = (container) => {
+    if (!container) return;
+
+    container.querySelectorAll(".video-container").forEach((videoContainer) => {
+      if (!videoContainer.querySelector(".video-delete-button")) {
+        const deleteBtn = createMediaDeleteButton(
+          "Remove video",
+          "video-delete-button image-delete-button",
+          () => {
+            videoContainer.remove();
+            triggerChange && triggerChange();
+          }
+        );
+        videoContainer.appendChild(deleteBtn);
+      }
+
+      attachMediaResizeHandle(videoContainer);
+      updateMediaControlVisibility(videoContainer);
+    });
+  };
+
   const processExistingImages = (container) => {
     if (!container) return;
 
     container.querySelectorAll("img").forEach((img) => {
-      // ONLY wrap if it's not already inside a wrapper
+      if (img.closest(".rte-modal")) return;
+
       const existingWrapper = img.closest(".image-container");
       if (existingWrapper) {
-        // Just update existing wrapper state if needed
-        existingWrapper.style.cursor = editable ? 'pointer' : 'default';
-        const deleteBtn = existingWrapper.querySelector('.image-delete-button');
-        if (deleteBtn) {
-          deleteBtn.style.display = editable ? 'flex' : 'none';
+        existingWrapper.style.cursor = editable ? "pointer" : "default";
+        const frame = ensureImageMediaFrame(existingWrapper);
+        if (frame && !frame.querySelector(".image-delete-button")) {
+          frame.appendChild(
+            createMediaDeleteButton(
+              "Remove image",
+              "image-delete-button",
+              () => {
+                existingWrapper.remove();
+                triggerChange && triggerChange();
+              }
+            )
+          );
         }
+        attachMediaResizeHandle(existingWrapper);
+        updateMediaControlVisibility(existingWrapper);
         return;
       }
 
       const wrapper = document.createElement("div");
-      const align = img.getAttribute('data-align') || 'center';
+      const align = img.getAttribute("data-align") || img.closest("[data-align]")?.getAttribute("data-align") || "left";
       wrapper.className = `image-container image-align-${align}`;
-      wrapper.style.cursor = editable ? 'pointer' : 'default';
+      wrapper.style.cursor = editable ? "pointer" : "default";
 
-      img.className = "rte-image";
-      img.style.cssText = ""; // Reset inline styles
-      img.setAttribute('data-align', align);
-      img.dataset.hasDeleteButton = "true";
+      const frame = document.createElement("div");
+      frame.className = "image-media-frame";
 
-      // Add click listener to open modal
-      img.addEventListener("click", () => openImageModal(img.src));
+      if (img.getAttribute("width") && !frame.style.width) {
+        frame.style.width = `${img.getAttribute("width")}px`;
+      } else if (img.style.width && img.style.width.endsWith("px")) {
+        frame.style.width = img.style.width;
+      }
 
-      const deleteBtn = document.createElement("button");
-      deleteBtn.innerHTML = "×";
-      deleteBtn.className = "image-delete-button";
-      deleteBtn.style.display = editable ? 'flex' : 'none';
-      deleteBtn.style.pointerEvents = editable ? 'auto' : 'none';
-      deleteBtn.title = "Remove image";
+      img.classList.add("rte-image");
+      img.setAttribute("data-align", align);
 
-      deleteBtn.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
+      if (frame.style.width) {
+        img.style.width = "100%";
+        img.style.height = frame.dataset.explicitHeight ? "100%" : "auto";
+      } else {
+        img.style.width = "";
+        img.style.height = "auto";
+      }
 
-        const wrapper = e.currentTarget.closest(".image-container");
-        if (wrapper && wrapper.parentNode) {
-          wrapper.parentNode.removeChild(wrapper);
+      img.addEventListener("click", (event) => {
+        if (event.target.closest(".image-delete-button, .media-resize-handle")) return;
+        openImageModal(img.src);
+      });
+
+      const deleteBtn = createMediaDeleteButton(
+        "Remove image",
+        "image-delete-button",
+        () => {
+          wrapper.remove();
           triggerChange && triggerChange();
         }
-      };
+      );
 
       const { parentNode, nextSibling } = img;
       if (parentNode) {
         parentNode.removeChild(img);
-        wrapper.appendChild(img);
-        wrapper.appendChild(deleteBtn);
+        frame.appendChild(img);
+        frame.appendChild(deleteBtn);
+        wrapper.appendChild(frame);
+        attachMediaResizeHandle(wrapper);
 
         if (nextSibling) {
           parentNode.insertBefore(wrapper, nextSibling);
@@ -772,12 +1045,6 @@ export default function RichTextEditor({
   };
 
 
-  useEffect(() => {
-    if (editorRef.current && value) {
-      requestAnimationFrame(() => processExistingImages(editorRef.current));
-    }
-  }, [value]);
-
   /* 
      Advanced Tip: Use the 'onImageUpload' prop to handle file uploads to a server 
      instead of using base64. If 'onImageUpload' is provided, it should return a URL string.
@@ -788,7 +1055,10 @@ export default function RichTextEditor({
 
         // Create container for the image
         const container = document.createElement('div');
-        container.className = 'image-container';
+        container.className = 'image-container image-align-left';
+
+        const frame = document.createElement('div');
+        frame.className = 'image-media-frame';
 
         // Create image element
         const img = document.createElement('img');
@@ -796,16 +1066,14 @@ export default function RichTextEditor({
         img.alt = fileName || "image";
         img.addEventListener("click", () => openImageModal(dataUrl));
 
-        // Add elements to container
-        container.appendChild(img);
+        frame.appendChild(img);
+        container.appendChild(frame);
 
         // Insert at cursor position
         insertNodeAtCursor(container);
-        triggerChange();
-
-        // Immediately process newly inserted image so delete button appears
         requestAnimationFrame(() => {
-          processExistingImages(editorRef.current);
+          processExistingMedia(editorRef.current);
+          triggerChange();
         });
       }
     } catch (err) {
@@ -971,17 +1239,39 @@ export default function RichTextEditor({
     }
   };
 
-  const getCleanHtml = () => {
-    if (!editorRef.current) return "";
-    return editorRef.current.innerHTML;
-  };
-
   // Helper function to unescape HTML entities
   const unescapeHtml = (html) => {
     if (!html) return '';
     const txt = document.createElement("textarea");
     txt.innerHTML = html;
     return txt.value;
+  };
+
+  const isCursorAtEndOfListItem = (range, listItem) => {
+    const suffixRange = document.createRange();
+    suffixRange.setStart(range.startContainer, range.startOffset);
+    suffixRange.setEnd(listItem, listItem.childNodes.length);
+    return suffixRange.toString().replace(/\u200B/g, "").length === 0;
+  };
+
+  const prepareListItemForTyping = (listItem, selection) => {
+    const activeColor = getActiveTextColor();
+    const newRange = document.createRange();
+
+    if (activeColor && activeColor.toLowerCase() !== "#000000") {
+      const span = document.createElement("span");
+      span.style.color = activeColor;
+      span.appendChild(document.createTextNode("\u200B"));
+      listItem.appendChild(span);
+      newRange.setStart(span.firstChild, 1);
+    } else {
+      listItem.appendChild(document.createTextNode("\u200B"));
+      newRange.setStart(listItem.firstChild, 1);
+    }
+
+    newRange.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(newRange);
   };
 
   const handleKeyDown = useCallback((e) => {
@@ -1000,15 +1290,14 @@ export default function RichTextEditor({
       const listItem = parent.closest('li');
       if (listItem) {
         const list = listItem.parentNode;
-        const isOrderedList = list.tagName === 'OL';
 
         // Create a new list item
         const newItem = document.createElement('li');
 
         // If we're at the end of a list item, add a new one
-        if (range.collapsed && range.endOffset === node.length) {
+        if (range.collapsed && isCursorAtEndOfListItem(range, listItem)) {
           // If it's empty, create a regular paragraph instead
-          if (listItem.textContent.trim() === '') {
+          if (listItem.textContent.replace(/\u200B/g, '').trim() === '') {
             document.execCommand('insertHTML', false, '<div><br></div>');
             // Move the cursor to the new line
             const newRange = document.createRange();
@@ -1017,6 +1306,7 @@ export default function RichTextEditor({
             newRange.collapse(true);
             selection.removeAllRanges();
             selection.addRange(newRange);
+            triggerChange();
             return;
           }
 
@@ -1027,22 +1317,14 @@ export default function RichTextEditor({
             list.appendChild(newItem);
           }
 
-          // Move cursor to the new list item
-          const newRange = document.createRange();
-          newRange.setStart(newItem, 0);
-          newRange.collapse(true);
-          selection.removeAllRanges();
-          selection.addRange(newRange);
+          prepareListItemForTyping(newItem, selection);
         } else {
-          // If we're in the middle of text, split the list item
-          const textBefore = node.textContent.substring(0, range.startOffset);
-          const textAfter = node.textContent.substring(range.startOffset);
-
-          // Update current item
-          node.textContent = textBefore;
-
-          // Insert new item after current one
-          newItem.textContent = textAfter;
+          // If we're in the middle of text, split the list item while preserving formatting
+          const afterRange = document.createRange();
+          afterRange.setStart(range.startContainer, range.startOffset);
+          afterRange.setEnd(listItem, listItem.childNodes.length);
+          const movedFragment = afterRange.extractContents();
+          newItem.appendChild(movedFragment);
 
           if (listItem.nextSibling) {
             list.insertBefore(newItem, listItem.nextSibling);
@@ -1050,12 +1332,16 @@ export default function RichTextEditor({
             list.appendChild(newItem);
           }
 
-          // Move cursor to the new list item
-          const newRange = document.createRange();
-          newRange.setStart(newItem.firstChild || newItem, 0);
-          newRange.collapse(true);
-          selection.removeAllRanges();
-          selection.addRange(newRange);
+          if (!newItem.textContent.replace(/\u200B/g, '').trim()) {
+            newItem.textContent = "";
+            prepareListItemForTyping(newItem, selection);
+          } else {
+            const newRange = document.createRange();
+            newRange.setStart(newItem, 0);
+            newRange.collapse(true);
+            selection.removeAllRanges();
+            selection.addRange(newRange);
+          }
         }
       } else {
         // Regular text, insert a new paragraph
@@ -1077,7 +1363,7 @@ export default function RichTextEditor({
       e.preventDefault();
       exec("underline");
     }
-  }, [exec, triggerChange]);
+  }, [exec, triggerChange, fontColor]);
 
   const confirmLink = () => {
     // Add protocol if missing
@@ -1295,7 +1581,7 @@ export default function RichTextEditor({
   };
   const handleInput = useCallback(() => {
     if (editorRef.current) {
-      const next = editorRef.current.innerHTML;
+      const next = getCleanHtml();
       setHtml(next);
       lastSynchronizedHtmlRef.current = next;
       onChange && onChange(next);
@@ -1338,6 +1624,21 @@ export default function RichTextEditor({
 
   const handleEditorClick = useCallback((e) => {
     setSelectionVersion(v => v + 1);
+
+    const deleteBtn = e.target.closest(
+      'button[title="Remove image"], button[title="Remove video"]'
+    );
+    if (deleteBtn && editable && editorFocused) {
+      e.preventDefault();
+      e.stopPropagation();
+      const wrapper = deleteBtn.closest('.image-container, .video-container');
+      if (wrapper) {
+        wrapper.remove();
+        triggerChange();
+      }
+      return;
+    }
+
     // Check if the click is on a link
     const clickedLink = e.target.closest('a');
 
@@ -1372,7 +1673,7 @@ export default function RichTextEditor({
         }
       }, 0);
     }
-  }, [editable, disabled]);
+  }, [editable, disabled, editorFocused, triggerChange]);
 
   const renderImageToolbar = () => {
     if (!selectedImage || !editorRef.current || !editable) return null;
@@ -1437,7 +1738,9 @@ export default function RichTextEditor({
     );
   };
 
-  
+  if (isLoading) {
+    return <Spinner />;
+  }
 
   return (
     <div className="rte-main-wrapper" style={{ width: '100%', position: 'relative' }}>
@@ -1791,12 +2094,14 @@ export default function RichTextEditor({
           onDragOver={(e) => e.preventDefault()}
           onKeyDown={handleKeyDown}
           onClick={handleEditorClick}
+          onFocus={handleEditorFocus}
+          onBlur={handleEditorBlur}
           style={{
             minHeight: minHeight || '150px',
             maxHeight: maxHeight || '500px',
             paddingLeft: paddingLeft || '12px'
           }}
-          className="rte-content"
+          className={`rte-content${editable ? " rte-is-editable" : ""}${editorFocused ? " rte-is-focused" : ""}`}
         />
         {renderImageToolbar()}
 

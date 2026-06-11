@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import RichTextEditor from '../../src/RichTextEditor'
+import { RichTextEditor } from 'react-lite-rich-text-editor'
 import './App.css'
 
 function App() {
@@ -16,6 +16,7 @@ function App() {
             label="Example Editor"
             value={content}
             onChange={setContent}
+            editable
             showBorder={true}
             minHeight="400px"
           />
