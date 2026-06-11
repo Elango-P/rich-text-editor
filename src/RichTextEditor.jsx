@@ -50,6 +50,7 @@ export default function RichTextEditor({
   const [editable, setEditable] = useState(initialEditable);
   const [editorFocused, setEditorFocused] = useState(false);
   const lastSynchronizedHtmlRef = useRef("");
+  const syncProcessedMediaRef = useRef(() => {});
 
   useEffect(() => {
     setEditable(initialEditable);
@@ -171,7 +172,7 @@ export default function RichTextEditor({
 
   useEffect(() => {
     if (editorRef.current && value && value !== lastSynchronizedHtmlRef.current) {
-      requestAnimationFrame(() => processExistingMedia(editorRef.current));
+      requestAnimationFrame(() => syncProcessedMediaRef.current(editorRef.current));
     }
   }, [value]);
 
@@ -181,7 +182,7 @@ export default function RichTextEditor({
     if (!editable) {
       setEditorFocused(false);
     }
-    processExistingMedia(editorRef.current);
+    syncProcessedMediaRef.current(editorRef.current);
   }, [editable]);
 
   useEffect(() => {
@@ -215,7 +216,7 @@ export default function RichTextEditor({
           if (editorRef.current && editorRef.current.innerHTML !== newContent) {
             editorRef.current.innerHTML = newContent;
           }
-          requestAnimationFrame(() => processExistingMedia(editorRef.current));
+          requestAnimationFrame(() => syncProcessedMediaRef.current(editorRef.current));
           updateMetrics();
         }
       } catch (e) {
@@ -231,11 +232,57 @@ export default function RichTextEditor({
     }
   }, [value, initialEditable, updateMetrics]);
 
+  const LIST_BLOCK_MEDIA_SELECTOR = ".video-container, .image-container, table";
+
+  const isListItemEffectivelyEmpty = (listItem) => {
+    if (!listItem) return true;
+    const clone = listItem.cloneNode(true);
+    clone.querySelectorAll(LIST_BLOCK_MEDIA_SELECTOR).forEach((el) => el.remove());
+    clone.querySelectorAll("br").forEach((el) => el.remove());
+    return clone.textContent.replace(/[\u200B\u00A0\s]/g, "").length === 0;
+  };
+
+  const hoistBlockMediaOutOfListItems = (container) => {
+    if (!container) return false;
+
+    let changed = false;
+    container.querySelectorAll("ol, ul").forEach((list) => {
+      const items = Array.from(list.children).filter((child) => child.tagName === "LI");
+
+      items.forEach((listItem) => {
+        const blockMedia = Array.from(listItem.querySelectorAll(LIST_BLOCK_MEDIA_SELECTOR));
+        if (blockMedia.length === 0) return;
+
+        const hadText = !isListItemEffectivelyEmpty(listItem);
+
+        blockMedia.forEach((media) => {
+          listItem.removeChild(media);
+          if (list.parentNode) {
+            list.parentNode.insertBefore(media, list.nextSibling);
+          }
+          changed = true;
+        });
+
+        if (!hadText || isListItemEffectivelyEmpty(listItem)) {
+          listItem.remove();
+          changed = true;
+        }
+      });
+
+      if (list.children.length === 0 && list.parentNode) {
+        list.remove();
+        changed = true;
+      }
+    });
+
+    return changed;
+  };
 
   const processExistingMedia = (container) => {
-    if (!container) return;
+    if (!container) return false;
     processExistingImages(container);
     processExistingVideos(container);
+    return hoistBlockMediaOutOfListItems(container);
   };
 
   const getCleanHtml = () => {
@@ -252,6 +299,12 @@ export default function RichTextEditor({
     lastSynchronizedHtmlRef.current = next;
     onChange && onChange(next);
   }, [onChange]);
+
+  syncProcessedMediaRef.current = (container) => {
+    if (processExistingMedia(container)) {
+      triggerChange();
+    }
+  };
 
   const handleChange = () => {
     if (!editorRef.current) return;
@@ -923,8 +976,10 @@ export default function RichTextEditor({
       }
       setVideoModalOpen(false);
       setVideoUrl("");
-      triggerChange && triggerChange();
-      requestAnimationFrame(() => processExistingMedia(editorRef.current));
+      requestAnimationFrame(() => {
+        processExistingMedia(editorRef.current);
+        triggerChange();
+      });
     } else {
       console.warn("Invalid Video URL or Platform not supported");
     }
@@ -1247,6 +1302,13 @@ export default function RichTextEditor({
     return txt.value;
   };
 
+  const isCursorAtStartOfListItem = (range, listItem) => {
+    const prefixRange = document.createRange();
+    prefixRange.setStart(listItem, 0);
+    prefixRange.setEnd(range.startContainer, range.startOffset);
+    return prefixRange.toString().replace(/[\u200B\u00A0\s]/g, "").length === 0;
+  };
+
   const isCursorAtEndOfListItem = (range, listItem) => {
     const suffixRange = document.createRange();
     suffixRange.setStart(range.startContainer, range.startOffset);
@@ -1297,7 +1359,7 @@ export default function RichTextEditor({
         // If we're at the end of a list item, add a new one
         if (range.collapsed && isCursorAtEndOfListItem(range, listItem)) {
           // If it's empty, create a regular paragraph instead
-          if (listItem.textContent.replace(/\u200B/g, '').trim() === '') {
+          if (isListItemEffectivelyEmpty(listItem)) {
             document.execCommand('insertHTML', false, '<div><br></div>');
             // Move the cursor to the new line
             const newRange = document.createRange();
@@ -1332,7 +1394,7 @@ export default function RichTextEditor({
             list.appendChild(newItem);
           }
 
-          if (!newItem.textContent.replace(/\u200B/g, '').trim()) {
+          if (isListItemEffectivelyEmpty(newItem)) {
             newItem.textContent = "";
             prepareListItemForTyping(newItem, selection);
           } else {
@@ -1349,6 +1411,65 @@ export default function RichTextEditor({
       }
 
       triggerChange();
+      return;
+    }
+
+    if (e.key === "Backspace") {
+      const selection = window.getSelection();
+      if (!selection?.rangeCount) return;
+
+      const range = selection.getRangeAt(0);
+      if (!range.collapsed) return;
+
+      let node = range.startContainer;
+      if (node.nodeType === 3) {
+        node = node.parentNode;
+      }
+
+      const listItem = node.closest?.("li");
+      if (!listItem || !editorRef.current?.contains(listItem)) return;
+
+      const list = listItem.parentNode;
+
+      if (isListItemEffectivelyEmpty(listItem)) {
+        e.preventDefault();
+
+        const prevLi = listItem.previousElementSibling;
+        const blockMedia = Array.from(listItem.querySelectorAll(LIST_BLOCK_MEDIA_SELECTOR));
+
+        blockMedia.forEach((media) => {
+          list.parentNode?.insertBefore(media, list.nextSibling);
+        });
+
+        listItem.remove();
+
+        if (list.children.length === 0) {
+          list.remove();
+        }
+
+        if (prevLi?.tagName === "LI") {
+          const newRange = document.createRange();
+          newRange.selectNodeContents(prevLi);
+          newRange.collapse(false);
+          selection.removeAllRanges();
+          selection.addRange(newRange);
+        }
+
+        triggerChange();
+        return;
+      }
+
+      if (isCursorAtStartOfListItem(range, listItem)) {
+        const prevLi = listItem.previousElementSibling;
+        if (prevLi?.tagName === "LI" && isListItemEffectivelyEmpty(prevLi)) {
+          e.preventDefault();
+          prevLi.remove();
+          if (list.children.length === 0) {
+            list.remove();
+          }
+          triggerChange();
+        }
+      }
       return;
     }
 
