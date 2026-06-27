@@ -24,6 +24,7 @@ export interface RichTextEditorProps {
 
   /**
    * Whether the editor is in editable mode.
+   * @default true
    */
   editable?: boolean;
 
@@ -46,6 +47,12 @@ export interface RichTextEditorProps {
    * Label for the editor field.
    */
   label?: string;
+
+  /**
+   * Placeholder text shown when the editor is empty.
+   * @default "Type here..."
+   */
+  placeholder?: string;
 
   /**
    * Whether to show the border around the editor.

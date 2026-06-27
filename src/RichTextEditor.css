@@ -80,6 +80,18 @@
   border-color: #3b82f6;
 }
 
+.rte-heading-select {
+  width: 112px;
+}
+
+.rte-toolbar-button-text {
+  width: auto;
+  min-width: 32px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .rte-color-picker-label {
   position: relative;
   width: 32px;
@@ -117,6 +129,20 @@
   overflow-y: auto;
 }
 
+.rte-content-wrapper {
+  position: relative;
+}
+
+.rte-placeholder {
+  position: absolute;
+  top: 12px;
+  color: #9ca3af;
+  font-size: 16px;
+  line-height: 1.6;
+  pointer-events: none;
+  user-select: none;
+}
+
 .rte-content ul {
   list-style-type: disc;
   margin-left: 1.5rem;
@@ -125,6 +151,15 @@
 .rte-content ol {
   list-style-type: decimal;
   margin-left: 1.5rem;
+}
+
+.rte-content blockquote {
+  margin: 12px 0;
+  padding: 8px 14px;
+  border-left: 4px solid #bfdbfe;
+  background: #f8fafc;
+  color: #475569;
+  border-radius: 0 8px 8px 0;
 }
 
 .rte-content img {
@@ -150,14 +185,17 @@
 
 /* Video Containers */
 .video-container {
+  display: block;
   position: relative;
+  width: 100%;
+  max-width: 100%;
   padding-bottom: 56.25%;
   height: 0;
   overflow: hidden;
   margin: 16px 0;
+  line-height: 0;
   border-radius: 12px;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-  max-width: 100%;
 }
 
 .video-container iframe {
@@ -226,12 +264,14 @@
 }
 
 .rte-input {
-  width: 93%;
+  width: 100%;
+  box-sizing: border-box;
   padding: 8px 12px;
   border-radius: 8px;
   border: 1px solid #d1d5db;
   outline: none;
   transition: all 0.15s ease;
+  font-size: 14px;
 }
 
 .rte-input:focus {
@@ -318,27 +358,38 @@
   max-width: 100%;
   margin: 16px 0;
   line-height: 0;
+  position: relative;
 }
 
-.image-container.image-align-center {
+.image-container.image-align-center,
+.video-container.image-align-center {
   margin-left: auto;
   margin-right: auto;
 }
 
-.image-container.image-align-left {
+.image-container.image-align-left,
+.video-container.image-align-left {
   margin-left: 0;
   margin-right: auto;
 }
 
-.image-container.image-align-right {
+.image-container.image-align-right,
+.video-container.image-align-right {
   margin-left: auto;
   margin-right: 0;
+}
+
+.image-container.rte-media-selected,
+.video-container.rte-media-selected {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+  border-radius: 12px;
 }
 
 .image-media-frame {
   position: relative;
   display: block;
-  width: fit-content;
+  width: 100%;
   max-width: 100%;
   line-height: 0;
 }
@@ -352,18 +403,9 @@
   border-radius: 12px;
 }
 
-.image-media-frame[style*="width"] img {
+.image-container[data-width-percent] .image-media-frame,
+.image-container[data-width-percent] .image-media-frame img {
   width: 100%;
-}
-
-.image-media-frame[style*="height"] img,
-.image-media-frame[data-explicit-height="true"] img {
-  height: 100%;
-  object-fit: contain;
-}
-
-.image-container.image-small .image-media-frame img {
-  width: 50% !important;
 }
 
 .image-delete-button {
@@ -397,81 +439,38 @@
   pointer-events: auto;
 }
 
+.rte-content.rte-is-editable .video-container.rte-media-selected iframe {
+  pointer-events: none;
+}
+
 .image-delete-button:hover {
   background: #b91c1c; /* red-700 */
   transform: translate(50%, -50%) scale(1.1);
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
 }
 
-.media-resize-handles {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 55;
-}
-
 .media-resize-handle {
   position: absolute;
-  background: #dbeafe;
+  right: 2px;
+  bottom: 2px;
+  width: 12px;
+  height: 12px;
+  background: #3b82f6;
   border: 2px solid #ffffff;
-  border-radius: 4px;
+  border-radius: 3px;
   z-index: 60;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.2);
   pointer-events: auto;
+  cursor: nwse-resize;
 }
 
 .media-resize-handle:hover {
-  background: #bfdbfe;
+  background: #2563eb;
 }
 
-.media-resize-handle-right,
-.media-resize-handle-left {
-  top: 50%;
-  width: 10px;
-  height: 28px;
-  transform: translateY(-50%);
-  cursor: ew-resize;
-}
-
-.media-resize-handle-right {
-  right: -5px;
-}
-
-.media-resize-handle-left {
-  left: -5px;
-}
-
-.media-resize-handle-top,
-.media-resize-handle-bottom {
-  left: 50%;
-  width: 28px;
-  height: 10px;
-  transform: translateX(-50%);
-  cursor: ns-resize;
-}
-
-.media-resize-handle-top {
-  top: -5px;
-}
-
-.media-resize-handle-bottom {
-  bottom: -5px;
-}
-
-.video-container .media-resize-handle-right {
-  right: 4px;
-}
-
-.video-container .media-resize-handle-left {
-  left: 4px;
-}
-
-.video-container .media-resize-handle-top {
-  top: 4px;
-}
-
-.video-container .media-resize-handle-bottom {
-  bottom: 4px;
+.video-container .media-resize-handle {
+  right: 6px;
+  bottom: 6px;
 }
 
 .video-container .video-delete-button {
@@ -511,20 +510,21 @@
   transform: scale(0.95);
 }
 
-/* Image Toolbar */
-.rte-image-toolbar {
+/* Media Toolbar */
+.rte-media-toolbar {
   display: flex;
-  background: white !important;
-  border: 1px solid #e5e7eb !important;
-  border-radius: 8px !important;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
-  padding: 4px !important;
-  gap: 4px !important;
-  pointer-events: auto !important;
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  padding: 4px;
+  gap: 2px;
+  pointer-events: auto;
 }
 
-.rte-image-toolbar button {
-  min-width: 32px;
+.rte-media-toolbar button {
+  min-width: 28px;
   height: 28px;
   display: flex;
   align-items: center;
@@ -537,20 +537,29 @@
   font-weight: 600;
   font-size: 11px;
   transition: all 0.15s ease;
-  padding: 0 4px;
+  padding: 0 6px;
 }
 
-.rte-image-toolbar button:hover {
-  background-color: #f3f4f6;
-  color: #111827;
+.rte-media-toolbar button:hover,
+.rte-media-toolbar button.active {
+  background-color: #eff6ff;
+  color: #2563eb;
 }
 
-.rte-image-toolbar button.danger {
-  color: #ef4444 !important;
+.rte-media-toolbar button.danger {
+  color: #ef4444;
 }
 
-.rte-image-toolbar button.danger:hover {
-  background-color: #fef2f2 !important;
+.rte-media-toolbar button.danger:hover {
+  background-color: #fef2f2;
+  color: #dc2626;
+}
+
+.rte-media-toolbar-divider {
+  width: 1px;
+  height: 18px;
+  background: #e5e7eb;
+  margin: 0 2px;
 }
 
 .image-container:after {

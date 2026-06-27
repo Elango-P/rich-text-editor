@@ -16,7 +16,7 @@ function App() {
             label="Example Editor"
             value={content}
             onChange={setContent}
-            editable
+            placeholder="Tell us your story..."
             showBorder={true}
             minHeight="400px"
           />

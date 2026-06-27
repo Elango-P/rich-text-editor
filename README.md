@@ -28,8 +28,13 @@ A **premium, zero-dependency**, and industry-standard rich text editor for React
 -   📏 **Image Resizing**: Interactive 4-handle resizing system for uploaded images.
 -   🧮 **Content Metrics**: Stealthy, professional footer showing real-time **Word and Character counts**.
 -   📝 **Rich Formatting**: Bold, italic, underline, font sizes, colors, alignment, and lists.
+-   📑 **Heading Styles**: Built-in dropdown for Paragraph, Heading 1, Heading 2, Heading 3, and Quote.
+-   🧹 **Clear Formatting**: One-click button to remove styles, links, and reset text to a clean paragraph.
+-   ⚡ **Markdown Shortcuts**: Type `#`, `##`, `###`, `>`, `-`, `*`, or `1.` then press Space to format instantly.
+-   💬 **Placeholder Support**: Show helpful hint text when the editor is empty.
 -   🔗 **Smart Links**: Automatic protocol handling and new window navigation.
 -   🎨 **Premium UI**: Modern, glassmorphism-inspired design with a polished Look & Feel.
+-   ♿ **Accessible**: Editable region includes `role="textbox"` and `aria-label` support.
 
 ## Installation
 
@@ -59,6 +64,45 @@ function App() {
 }
 ```
 
+## Text Styles
+
+Use the **Paragraph / Heading / Quote** dropdown in the toolbar to change block formatting:
+
+| Style | Toolbar Option |
+| :--- | :--- |
+| Normal text | Paragraph |
+| Large title | Heading 1 |
+| Section title | Heading 2 |
+| Subsection title | Heading 3 |
+| Quoted text | Quote |
+
+Use the **Tx** button to clear formatting from the current selection — removes bold, italic, underline, colors, links, and resets the block to a paragraph.
+
+## Markdown Shortcuts
+
+Type these at the start of a line, then press **Space** to convert instantly:
+
+| Shortcut | Result |
+| :--- | :--- |
+| `#` + Space | Heading 1 |
+| `##` + Space | Heading 2 |
+| `###` + Space | Heading 3 |
+| `>` + Space | Quote |
+| `-` or `*` + Space | Bullet list |
+| `1.` + Space | Numbered list |
+
+**Example:** Type `## My Title` and press Space — it becomes a Heading 2.
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+| :--- | :--- |
+| `Ctrl/Cmd + B` | Bold |
+| `Ctrl/Cmd + I` | Italic |
+| `Ctrl/Cmd + U` | Underline |
+| `Enter` | New paragraph or list item |
+| `Escape` | Close image zoom modal |
+
 ## Props
 
 | Prop | Type | Default | Description |
@@ -67,9 +111,12 @@ function App() {
 | `value` | `string` | `""` | The HTML content of the editor. |
 | `onChange` | `function` | `undefined` | Callback function triggered on content change. |
 | `placeholder` | `string` | `"Type here..."` | Placeholder text when empty. |
+| `editable` | `boolean` | `true` | Whether the editor is editable. Set to `false` for a read-only viewer. |
 | `disabled` | `boolean` | `false` | Disables the editor and hides the toolbar. |
 | `showBorder` | `boolean` | `true` | Controls the visibility of the editor's border and shadow. |
-| `onImageUpload` | `function` | `undefined` | Custom handler for image uploads. |
+| `minHeight` | `string \| number` | `"150px"` | Minimum height of the editor content area. |
+| `maxHeight` | `string \| number` | `"500px"` | Maximum height of the editor content area. |
+| `onImageUpload` | `function` | `undefined` | Custom handler for image uploads. Should return a `Promise<string>` URL. |
 
 ## Development & Build
 

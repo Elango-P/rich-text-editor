@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { FaImage, FaBold, FaItalic, FaUnderline, FaTextHeight, FaAlignCenter, FaAlignRight, FaAlignJustify, FaAlignLeft, FaListOl, FaListUl, FaFont, FaTable, FaYoutube, FaVideo, FaTrash, FaObjectGroup } from "./icons";
+import { FaImage, FaBold, FaItalic, FaUnderline, FaTextHeight, FaAlignCenter, FaAlignRight, FaAlignJustify, FaAlignLeft, FaListOl, FaListUl, FaFont, FaLink, FaTable, FaYoutube, FaVideo, FaTrash, FaObjectGroup } from "./icons";
 import { draftBlocksToHTML, isValidDraftFormat } from "./utils";
 import Spinner from "./Spinner";
 import LabelComponent from "./Label";
@@ -26,11 +26,12 @@ export default function RichTextEditor({
   showEditButton,
   onBlur,
   disabled = false,
-  editable: initialEditable = false,
+  editable: initialEditable = true,
   value,
   isLoading,
   isList = false,
   label,
+  placeholder = "Type here...",
   showBorder = true,
   paddingLeft,
   minHeight,
@@ -71,6 +72,7 @@ export default function RichTextEditor({
   // NEW: Track current line height
   const [currentLineHeight, setCurrentLineHeight] = useState("");
   const [activeAlign, setActiveAlign] = useState(null);
+  const [currentBlockFormat, setCurrentBlockFormat] = useState("div");
 
   const [imageModalOpen, setImageModalOpen] = useState(false);
   const [selectedImageUrl, setSelectedImageUrl] = useState("");
@@ -85,8 +87,9 @@ export default function RichTextEditor({
   const [tableCols, setTableCols] = useState(3);
   const [selectionVersion, setSelectionVersion] = useState(0);
 
-  const [selectedImage, setSelectedImage] = useState(null);
+  const [selectedMedia, setSelectedMedia] = useState(null);
   const [metrics, setMetrics] = useState({ words: 0, chars: 0 });
+  const [isEmpty, setIsEmpty] = useState(!value);
 
   const updateMetrics = useCallback(() => {
     if (!editorRef.current) return;
@@ -96,6 +99,11 @@ export default function RichTextEditor({
     const words = cleanText ? cleanText.split(/\s+/).length : 0;
     const chars = text.length;
     setMetrics({ words, chars });
+
+    // Track emptiness for the placeholder. Account for media-only content.
+    const stripped = text.replace(/[\u200B\u00A0\s]/g, "");
+    const hasMedia = !!editorRef.current.querySelector("img, table, iframe");
+    setIsEmpty(stripped.length === 0 && !hasMedia);
   }, []);
 
   const openImageModal = (url) => {
@@ -177,10 +185,10 @@ export default function RichTextEditor({
   }, [value]);
 
 
-  // Runs whenever editable changes (toggles delete icon visibility)
   useEffect(() => {
     if (!editable) {
       setEditorFocused(false);
+      clearMediaSelection();
     }
     syncProcessedMediaRef.current(editorRef.current);
   }, [editable]);
@@ -462,21 +470,17 @@ export default function RichTextEditor({
 
   const stripEditorChrome = (root) => {
     root.querySelectorAll(
-      ".image-delete-button, .video-delete-button, .video-edit-overlay, .media-resize-handles, .media-resize-handle"
+      ".image-delete-button, .video-delete-button, .video-edit-overlay, .media-resize-handle"
     ).forEach((element) => element.remove());
+    root.querySelectorAll(".rte-media-selected").forEach((element) => {
+      element.classList.remove("rte-media-selected");
+    });
     return root;
   };
 
-  const getMediaSizeLimits = () => {
-    const maxWidth = editorRef.current
-      ? editorRef.current.getBoundingClientRect().width - 24
-      : 800;
-    return {
-      minWidth: 120,
-      minHeight: 80,
-      maxWidth,
-      maxHeight: 720,
-    };
+  const getEditorInnerWidth = () => {
+    if (!editorRef.current) return 800;
+    return Math.max(editorRef.current.clientWidth - 24, 200);
   };
 
   const ensureImageMediaFrame = (imageContainer) => {
@@ -488,18 +492,6 @@ export default function RichTextEditor({
     frame = document.createElement("div");
     frame.className = "image-media-frame";
 
-    ["width", "height", "marginLeft", "marginTop", "maxWidth"].forEach((prop) => {
-      if (imageContainer.style[prop]) {
-        frame.style[prop] = imageContainer.style[prop];
-        imageContainer.style[prop] = "";
-      }
-    });
-
-    if (imageContainer.dataset.explicitHeight) {
-      frame.dataset.explicitHeight = imageContainer.dataset.explicitHeight;
-      delete imageContainer.dataset.explicitHeight;
-    }
-
     const children = Array.from(imageContainer.children);
     imageContainer.appendChild(frame);
     children.forEach((child) => frame.appendChild(child));
@@ -510,138 +502,135 @@ export default function RichTextEditor({
   const getImageMediaTarget = (imageContainer) =>
     ensureImageMediaFrame(imageContainer) || imageContainer;
 
-  const applyImageMediaSize = (frame, width, height, edge) => {
-    const img = frame.querySelector("img");
-    const isVertical = edge === "top" || edge === "bottom";
+  const getMediaWidthPercent = (container) => {
+    if (!container) return 100;
+    if (container.dataset.widthPercent) {
+      return Number(container.dataset.widthPercent);
+    }
+    const width = container.style.width || "";
+    if (width.endsWith("%")) {
+      return parseInt(width, 10) || 100;
+    }
+    const editorWidth = getEditorInnerWidth();
+    const rect = container.getBoundingClientRect();
+    if (editorWidth > 0 && rect.width > 0) {
+      return Math.round((rect.width / editorWidth) * 100);
+    }
+    return 100;
+  };
 
-    frame.style.width = `${Math.round(width)}px`;
-    frame.style.maxWidth = "100%";
+  const applyMediaWidthPercent = (container, percent) => {
+    if (!container) return;
+    const clamped = Math.max(25, Math.min(100, Math.round(percent)));
+    container.dataset.widthPercent = String(clamped);
+    container.style.width = `${clamped}%`;
+    container.style.maxWidth = "100%";
+    container.style.marginLeft = "";
+    container.style.marginTop = "";
 
-    if (isVertical) {
-      frame.style.height = `${Math.round(height)}px`;
-      frame.dataset.explicitHeight = "true";
-      if (img) {
-        img.style.width = "100%";
-        img.style.height = "100%";
-        img.style.objectFit = "contain";
-      }
+    if (container.classList.contains("video-container")) {
+      container.style.height = "0";
+      container.style.paddingBottom = "56.25%";
       return;
     }
 
-    if (!frame.dataset.explicitHeight) {
-      frame.style.height = "";
-    }
-
+    const frame = getImageMediaTarget(container);
+    if (!frame) return;
+    frame.style.width = "100%";
+    frame.style.height = "";
+    const img = frame.querySelector("img");
     if (img) {
-      img.style.width = "100%";
-      if (frame.dataset.explicitHeight) {
-        img.style.height = "100%";
-        img.style.objectFit = "contain";
-      } else {
-        img.style.height = "auto";
-        img.style.objectFit = "";
-      }
+      img.style.height = "auto";
+      img.style.objectFit = "";
     }
   };
 
-  const applyVideoMediaSize = (container, width, height) => {
-    container.style.paddingBottom = "0";
-    container.style.width = `${Math.round(width)}px`;
-    container.style.maxWidth = "100%";
-    container.style.height = `${Math.round(height)}px`;
+  const normalizeMediaWidth = (container) => {
+    if (!container) return;
+    if (container.classList.contains("image-small")) {
+      container.classList.remove("image-small");
+      applyMediaWidthPercent(container, 50);
+      return;
+    }
+    if (container.dataset.widthPercent) {
+      applyMediaWidthPercent(container, Number(container.dataset.widthPercent));
+      return;
+    }
+    const width = container.style.width || "";
+    if (width.endsWith("%")) {
+      applyMediaWidthPercent(container, parseInt(width, 10) || 100);
+      return;
+    }
+    if (width.endsWith("px")) {
+      const editorWidth = getEditorInnerWidth();
+      const px = parseFloat(width);
+      if (editorWidth > 0 && px > 0) {
+        applyMediaWidthPercent(container, Math.round((px / editorWidth) * 100));
+      }
+      return;
+    }
+    if (container.classList.contains("video-container")) {
+      applyMediaWidthPercent(container, 100);
+    }
+  };
+
+  const clearMediaSelection = () => {
+    editorRef.current?.querySelectorAll(".rte-media-selected").forEach((element) => {
+      element.classList.remove("rte-media-selected");
+    });
+    setSelectedMedia(null);
+  };
+
+  const selectMediaContainer = (container) => {
+    if (!container || !editorRef.current?.contains(container)) return;
+    editorRef.current.querySelectorAll(".rte-media-selected").forEach((element) => {
+      element.classList.remove("rte-media-selected");
+    });
+    container.classList.add("rte-media-selected");
+    setSelectedMedia(container);
   };
 
   const attachMediaResizeHandle = (container) => {
-    if (!container || container.querySelector(".media-resize-handles")) return;
-
-    const isVideo = container.classList.contains("video-container");
-    const resizeTarget = isVideo ? container : getImageMediaTarget(container);
+    if (!container) return;
+    const resizeTarget = container.classList.contains("video-container")
+      ? container
+      : getImageMediaTarget(container);
     if (!resizeTarget) return;
 
-    const handlesWrapper = document.createElement("div");
-    handlesWrapper.className = "media-resize-handles";
-    handlesWrapper.setAttribute("contenteditable", "false");
+    resizeTarget.querySelector(".media-resize-handle")?.remove();
 
-    const edges = [
-      { edge: "left", title: "Drag to resize width" },
-      { edge: "right", title: "Drag to resize width" },
-      { edge: "top", title: "Drag to resize height" },
-      { edge: "bottom", title: "Drag to resize height" },
-    ];
+    const handle = document.createElement("div");
+    handle.className = "media-resize-handle";
+    handle.title = "Drag to resize";
+    handle.setAttribute("contenteditable", "false");
 
-    edges.forEach(({ edge, title }) => {
-      const handle = document.createElement("div");
-      handle.className = `media-resize-handle media-resize-handle-${edge}`;
-      handle.title = title;
-      handle.setAttribute("contenteditable", "false");
-      handle.dataset.edge = edge;
+    handle.addEventListener("mousedown", (event) => {
+      if (!editable) return;
+      event.preventDefault();
+      event.stopPropagation();
+      selectMediaContainer(container);
 
-      handle.addEventListener("mousedown", (event) => {
-        if (!editable) return;
-        event.preventDefault();
-        event.stopPropagation();
+      const editorWidth = getEditorInnerWidth();
+      const startX = event.clientX;
+      const startWidth = container.getBoundingClientRect().width;
 
-        const limits = getMediaSizeLimits();
-        const rect = resizeTarget.getBoundingClientRect();
-        const startX = event.clientX;
-        const startY = event.clientY;
-        const startWidth = rect.width;
-        const startHeight = rect.height;
-        const startMarginLeft = Number.parseFloat(resizeTarget.style.marginLeft) || 0;
-        const startMarginTop = Number.parseFloat(resizeTarget.style.marginTop) || 0;
+      const onMouseMove = (moveEvent) => {
+        const nextWidth = Math.max(60, startWidth + (moveEvent.clientX - startX));
+        const percent = Math.round((nextWidth / editorWidth) * 100);
+        applyMediaWidthPercent(container, percent);
+      };
 
-        if (isVideo) {
-          resizeTarget.style.paddingBottom = "0";
-        }
+      const onMouseUp = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+        triggerChange();
+      };
 
-        const onMouseMove = (moveEvent) => {
-          const deltaX = moveEvent.clientX - startX;
-          const deltaY = moveEvent.clientY - startY;
-          let nextWidth = startWidth;
-          let nextHeight = startHeight;
-
-          if (edge === "right") {
-            nextWidth = startWidth + deltaX;
-          } else if (edge === "left") {
-            nextWidth = startWidth - deltaX;
-          } else if (edge === "bottom") {
-            nextHeight = startHeight + deltaY;
-          } else if (edge === "top") {
-            nextHeight = startHeight - deltaY;
-          }
-
-          nextWidth = Math.max(limits.minWidth, Math.min(nextWidth, limits.maxWidth));
-          nextHeight = Math.max(limits.minHeight, Math.min(nextHeight, limits.maxHeight));
-
-          if (edge === "left") {
-            resizeTarget.style.marginLeft = `${Math.round(startMarginLeft + (startWidth - nextWidth))}px`;
-          }
-
-          if (edge === "top") {
-            resizeTarget.style.marginTop = `${Math.round(startMarginTop + (startHeight - nextHeight))}px`;
-          }
-
-          if (isVideo) {
-            applyVideoMediaSize(resizeTarget, nextWidth, nextHeight);
-          } else {
-            applyImageMediaSize(resizeTarget, nextWidth, nextHeight, edge);
-          }
-        };
-
-        const onMouseUp = () => {
-          document.removeEventListener("mousemove", onMouseMove);
-          document.removeEventListener("mouseup", onMouseUp);
-          triggerChange();
-        };
-
-        document.addEventListener("mousemove", onMouseMove);
-        document.addEventListener("mouseup", onMouseUp);
-      });
-
-      handlesWrapper.appendChild(handle);
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
     });
 
-    resizeTarget.appendChild(handlesWrapper);
+    resizeTarget.appendChild(handle);
   };
 
   const handleEditorFocus = () => {
@@ -657,11 +646,34 @@ export default function RichTextEditor({
   };
 
   const updateMediaControlVisibility = (container) => {
-    const handles = container.querySelector(".media-resize-handles");
-    if (handles instanceof HTMLElement) {
-      handles.style.display = editable ? "block" : "none";
-      handles.style.pointerEvents = editable ? "auto" : "none";
+    const handle = container.querySelector(".media-resize-handle");
+    if (handle instanceof HTMLElement) {
+      handle.style.display = editable ? "block" : "none";
+      handle.style.pointerEvents = editable ? "auto" : "none";
     }
+  };
+
+  const BLOCK_TAGS = ["P", "DIV", "H1", "H2", "H3", "BLOCKQUOTE", "LI"];
+
+  const getActiveBlock = (node) => {
+    if (!editorRef.current || !node) return null;
+    let current = node.nodeType === 3 ? node.parentNode : node;
+
+    while (current && current !== editorRef.current) {
+      if (current.nodeType === 1 && BLOCK_TAGS.includes(current.tagName)) {
+        return current;
+      }
+      current = current.parentNode;
+    }
+
+    return editorRef.current;
+  };
+
+  const getBlockFormat = (node) => {
+    const block = getActiveBlock(node);
+    if (!block || block === editorRef.current) return "div";
+    const tag = block.tagName.toLowerCase();
+    return tag === "p" || tag === "li" ? "div" : tag;
   };
 
   const createMediaDeleteButton = (title, className, onRemove) => {
@@ -728,6 +740,8 @@ export default function RichTextEditor({
       } else {
         setCurrentFontSize("16");
       }
+
+      setCurrentBlockFormat(getBlockFormat(sel.anchorNode));
     };
 
     document.addEventListener("selectionchange", handleGlobalSelectionSync);
@@ -1005,13 +1019,30 @@ export default function RichTextEditor({
           "video-delete-button image-delete-button",
           () => {
             videoContainer.remove();
+            clearMediaSelection();
             triggerChange && triggerChange();
           }
         );
         videoContainer.appendChild(deleteBtn);
       }
 
+      if (!videoContainer.dataset.mediaEnhanced) {
+        videoContainer.dataset.mediaEnhanced = "true";
+        if (!videoContainer.classList.contains("image-align-left") &&
+            !videoContainer.classList.contains("image-align-center") &&
+            !videoContainer.classList.contains("image-align-right")) {
+          videoContainer.classList.add("image-align-left");
+        }
+        videoContainer.addEventListener("click", (event) => {
+          if (event.target.closest(".image-delete-button, .media-resize-handle")) return;
+          event.preventDefault();
+          event.stopPropagation();
+          selectMediaContainer(videoContainer);
+        });
+      }
+
       attachMediaResizeHandle(videoContainer);
+      normalizeMediaWidth(videoContainer);
       updateMediaControlVisibility(videoContainer);
     });
   };
@@ -1039,6 +1070,7 @@ export default function RichTextEditor({
           );
         }
         attachMediaResizeHandle(existingWrapper);
+        normalizeMediaWidth(existingWrapper);
         updateMediaControlVisibility(existingWrapper);
         return;
       }
@@ -1051,26 +1083,22 @@ export default function RichTextEditor({
       const frame = document.createElement("div");
       frame.className = "image-media-frame";
 
-      if (img.getAttribute("width") && !frame.style.width) {
-        frame.style.width = `${img.getAttribute("width")}px`;
-      } else if (img.style.width && img.style.width.endsWith("px")) {
-        frame.style.width = img.style.width;
-      }
-
       img.classList.add("rte-image");
       img.setAttribute("data-align", align);
+      img.style.height = "auto";
 
-      if (frame.style.width) {
-        img.style.width = "100%";
-        img.style.height = frame.dataset.explicitHeight ? "100%" : "auto";
-      } else {
-        img.style.width = "";
-        img.style.height = "auto";
-      }
+      img.addEventListener("dblclick", (event) => {
+        if (event.target.closest(".image-delete-button, .media-resize-handle")) return;
+        event.preventDefault();
+        event.stopPropagation();
+        openImageModal(img.src);
+      });
 
       img.addEventListener("click", (event) => {
         if (event.target.closest(".image-delete-button, .media-resize-handle")) return;
-        openImageModal(img.src);
+        event.preventDefault();
+        event.stopPropagation();
+        selectMediaContainer(wrapper);
       });
 
       const deleteBtn = createMediaDeleteButton(
@@ -1089,6 +1117,7 @@ export default function RichTextEditor({
         frame.appendChild(deleteBtn);
         wrapper.appendChild(frame);
         attachMediaResizeHandle(wrapper);
+        normalizeMediaWidth(wrapper);
 
         if (nextSibling) {
           parentNode.insertBefore(wrapper, nextSibling);
@@ -1119,10 +1148,20 @@ export default function RichTextEditor({
         const img = document.createElement('img');
         img.src = dataUrl;
         img.alt = fileName || "image";
-        img.addEventListener("click", () => openImageModal(dataUrl));
+        img.addEventListener("dblclick", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openImageModal(dataUrl);
+        });
+        img.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          selectMediaContainer(container);
+        });
 
         frame.appendChild(img);
         container.appendChild(frame);
+        applyMediaWidthPercent(container, 25);
 
         // Insert at cursor position
         insertNodeAtCursor(container);
@@ -1337,6 +1376,8 @@ export default function RichTextEditor({
   };
 
   const handleKeyDown = useCallback((e) => {
+    if (applyMarkdownShortcut(e)) return;
+
     // Handle Enter key
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -1518,6 +1559,76 @@ export default function RichTextEditor({
 
   const handleSelect = (type) => {
     exec(type === "unordered" ? "insertUnorderedList" : "insertOrderedList");
+  };
+
+  const applyBlockFormat = (format) => {
+    document.execCommand("formatBlock", false, format);
+    setCurrentBlockFormat(format);
+    triggerChange();
+    focus();
+  };
+
+  const clearFormatting = () => {
+    document.execCommand("removeFormat", false, null);
+    document.execCommand("unlink", false, null);
+    document.execCommand("formatBlock", false, "div");
+    setCurrentBlockFormat("div");
+    setCurrentFontSize("16");
+    setCurrentLineHeight("");
+    setFontColor("#000000");
+    triggerChange();
+    focus();
+  };
+
+  const deleteTextBeforeCursorInBlock = (block, range, selection) => {
+    const prefixRange = document.createRange();
+    prefixRange.setStart(block, 0);
+    prefixRange.setEnd(range.startContainer, range.startOffset);
+    prefixRange.deleteContents();
+
+    const nextRange = document.createRange();
+    nextRange.setStart(block, 0);
+    nextRange.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(nextRange);
+  };
+
+  const applyMarkdownShortcut = (event) => {
+    if (event.key !== " " || event.ctrlKey || event.metaKey || event.altKey) {
+      return false;
+    }
+
+    const selection = window.getSelection();
+    if (!selection?.rangeCount || !selection.isCollapsed || !editorRef.current) {
+      return false;
+    }
+
+    const range = selection.getRangeAt(0);
+    const block = getActiveBlock(range.startContainer);
+    if (!block || !editorRef.current.contains(block)) return false;
+
+    const prefixRange = document.createRange();
+    prefixRange.setStart(block, 0);
+    prefixRange.setEnd(range.startContainer, range.startOffset);
+    const textBeforeCursor = prefixRange.toString().replace(/\u00A0/g, " ").trim();
+
+    const shortcuts = {
+      "#": () => applyBlockFormat("h1"),
+      "##": () => applyBlockFormat("h2"),
+      "###": () => applyBlockFormat("h3"),
+      ">": () => applyBlockFormat("blockquote"),
+      "-": () => handleSelect("unordered"),
+      "*": () => handleSelect("unordered"),
+      "1.": () => handleSelect("ordered"),
+    };
+
+    const action = shortcuts[textBeforeCursor];
+    if (!action) return false;
+
+    event.preventDefault();
+    deleteTextBeforeCursorInBlock(block, range, selection);
+    action();
+    return true;
   };
 
   const onLineHeightChange = (value) => {
@@ -1755,8 +1866,14 @@ export default function RichTextEditor({
       const wrapper = deleteBtn.closest('.image-container, .video-container');
       if (wrapper) {
         wrapper.remove();
+        clearMediaSelection();
         triggerChange();
       }
+      return;
+    }
+
+    const clickedMedia = e.target.closest('.image-container, .video-container');
+    if (clickedMedia && editorRef.current?.contains(clickedMedia) && editable) {
       return;
     }
 
@@ -1770,14 +1887,9 @@ export default function RichTextEditor({
       return;
     }
 
-    // NEW: Check if click is on an image for resizing
-    const clickedImg = e.target.closest('img');
-    if (clickedImg && !clickedImg.closest('.rte-modal')) {
-      setSelectedImage(clickedImg);
-    } else if (!e.target.closest('.rte-image-toolbar')) {
-      setSelectedImage(null);
+    if (!e.target.closest('.rte-media-toolbar')) {
+      clearMediaSelection();
     }
-
 
     // If disabled is true, prevent editing
     if (disabled === true) {
@@ -1796,65 +1908,70 @@ export default function RichTextEditor({
     }
   }, [editable, disabled, editorFocused, triggerChange]);
 
-  const renderImageToolbar = () => {
-    if (!selectedImage || !editorRef.current || !editable) return null;
+  const renderMediaToolbar = () => {
+    if (!selectedMedia || !editorRef.current || !editable) return null;
 
     const editorRect = editorRef.current.getBoundingClientRect();
-    const imgRect = selectedImage.getBoundingClientRect();
-
-    const top = imgRect.top - editorRect.top + editorRef.current.scrollTop;
-    const left = imgRect.left - editorRect.left + editorRef.current.scrollLeft;
-    const width = imgRect.width;
+    const mediaRect = selectedMedia.getBoundingClientRect();
+    const top = mediaRect.top - editorRect.top + editorRef.current.scrollTop;
+    const left = mediaRect.left - editorRect.left + editorRef.current.scrollLeft;
+    const width = mediaRect.width;
+    const currentPercent = getMediaWidthPercent(selectedMedia);
+    const widthPresets = [25, 50, 75, 100];
 
     const handleAlignment = (align) => {
-      const wrapper = selectedImage.closest('.image-container');
-      if (wrapper) {
-        // Remove all alignment classes first
-        wrapper.classList.remove('image-align-left', 'image-align-center', 'image-align-right');
-        // Add the new alignment class
-        wrapper.classList.add(`image-align-${align}`);
-        selectedImage.setAttribute('data-align', align);
-        triggerChange();
-      }
+      selectedMedia.classList.remove("image-align-left", "image-align-center", "image-align-right");
+      selectedMedia.classList.add(`image-align-${align}`);
+      const img = selectedMedia.querySelector("img");
+      if (img) img.setAttribute("data-align", align);
+      triggerChange();
     };
 
-    const removeImage = () => {
-      const wrapper = selectedImage.closest('.image-container');
-      if (wrapper) {
-        wrapper.remove();
-        setSelectedImage(null);
-        triggerChange();
-      }
+    const setWidth = (percent) => {
+      applyMediaWidthPercent(selectedMedia, percent);
+      triggerChange();
     };
 
-    const toggleSize = () => {
-      const wrapper = selectedImage.closest('.image-container');
-      if (wrapper) {
-        const isSmall = wrapper.classList.contains('image-small');
-        if (isSmall) {
-          wrapper.classList.remove('image-small');
-        } else {
-          wrapper.classList.add('image-small');
-        }
-        triggerChange();
+    const removeMedia = () => {
+      selectedMedia.remove();
+      clearMediaSelection();
+      triggerChange();
+    };
+
+    const isActivePercent = (percent) => {
+      if (!selectedMedia.dataset.widthPercent && !(selectedMedia.style.width || "").endsWith("%")) {
+        return false;
       }
+      return Math.abs(currentPercent - percent) <= 3;
     };
 
     return (
-      <div 
-        className="rte-image-toolbar"
-        style={{ 
-          position: 'absolute', 
-          top: Math.max(0, top - 45), 
-          left: Math.max(0, left + width / 2 - 80),
-          zIndex: 1000
+      <div
+        className="rte-media-toolbar"
+        style={{
+          position: "absolute",
+          top: Math.max(0, top - 44),
+          left: Math.max(8, left + width / 2 - 156),
+          zIndex: 1000,
         }}
       >
-        <button type="button" onClick={() => handleAlignment('left')} title="Align Left">L</button>
-        <button type="button" onClick={() => handleAlignment('center')} title="Align Center">C</button>
-        <button type="button" onClick={() => handleAlignment('right')} title="Align Right">R</button>
-        <button type="button" onClick={toggleSize} title="Toggle 50% Width">50%</button>
-        <button type="button" onClick={removeImage} className="danger" title="Remove Image">×</button>
+        <button type="button" onClick={() => handleAlignment("left")} title="Align Left">L</button>
+        <button type="button" onClick={() => handleAlignment("center")} title="Align Center">C</button>
+        <button type="button" onClick={() => handleAlignment("right")} title="Align Right">R</button>
+        <span className="rte-media-toolbar-divider" />
+        {widthPresets.map((percent) => (
+          <button
+            key={percent}
+            type="button"
+            className={isActivePercent(percent) ? "active" : ""}
+            onClick={() => setWidth(percent)}
+            title={`${percent}% width`}
+          >
+            {percent}%
+          </button>
+        ))}
+        <span className="rte-media-toolbar-divider" />
+        <button type="button" onClick={removeMedia} className="danger" title="Remove">×</button>
       </div>
     );
   };
@@ -1890,6 +2007,7 @@ export default function RichTextEditor({
         }}
       >
         {/* Toolbar */}
+          {!disabled && (
           <div className="rte-toolbar">
             {/* Bold */}
             <button
@@ -1937,6 +2055,39 @@ export default function RichTextEditor({
               className={`rte-toolbar-button ${isUnderline ? "active" : ""}`}
             >
               <FaUnderline size={14} />
+            </button>
+
+            <div style={{ width: '1px', height: '20px', backgroundColor: '#e5e7eb', margin: '0 4px' }}></div>
+
+            {/* Headings */}
+            <select
+              value={currentBlockFormat}
+              onMouseDown={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                applyBlockFormat(e.target.value);
+              }}
+              className="rte-toolbar-select rte-heading-select"
+              title="Text style"
+            >
+              <option value="div">Paragraph</option>
+              <option value="h1">Heading 1</option>
+              <option value="h2">Heading 2</option>
+              <option value="h3">Heading 3</option>
+              <option value="blockquote">Quote</option>
+            </select>
+
+            <button
+              type="button"
+              title="Clear Formatting"
+              className="rte-toolbar-button rte-toolbar-button-text"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                clearFormatting();
+              }}
+            >
+              Tx
             </button>
 
             <div style={{ width: '1px', height: '20px', backgroundColor: '#e5e7eb', margin: '0 4px' }}></div>
@@ -2088,7 +2239,7 @@ export default function RichTextEditor({
                 addLink();
               }}
             >
-              <span style={{ fontSize: '16px' }}>🔗</span>
+              <FaLink size={14} />
             </button>
 
             <input
@@ -2203,28 +2354,43 @@ export default function RichTextEditor({
               return null;
             })()}
           </div>
+          )}
         {/* Editor Content Area */}
-        <div
-          ref={editorRef}
-          contentEditable={editable && disabled !== true}
-          suppressContentEditableWarning
-          onInput={handleInput}
-          onPaste={handlePaste}
-          onDrop={handleDrop}
-          onDragStart={(e) => e.preventDefault()}
-          onDragOver={(e) => e.preventDefault()}
-          onKeyDown={handleKeyDown}
-          onClick={handleEditorClick}
-          onFocus={handleEditorFocus}
-          onBlur={handleEditorBlur}
-          style={{
-            minHeight: minHeight || '150px',
-            maxHeight: maxHeight || '500px',
-            paddingLeft: paddingLeft || '12px'
-          }}
-          className={`rte-content${editable ? " rte-is-editable" : ""}${editorFocused ? " rte-is-focused" : ""}`}
-        />
-        {renderImageToolbar()}
+        <div className="rte-content-wrapper" style={{ position: 'relative' }}>
+          <div
+            ref={editorRef}
+            contentEditable={editable && disabled !== true}
+            suppressContentEditableWarning
+            role="textbox"
+            aria-multiline="true"
+            aria-label={label || "Rich text editor"}
+            onInput={handleInput}
+            onPaste={handlePaste}
+            onDrop={handleDrop}
+            onDragStart={(e) => e.preventDefault()}
+            onDragOver={(e) => e.preventDefault()}
+            onKeyDown={handleKeyDown}
+            onClick={handleEditorClick}
+            onFocus={handleEditorFocus}
+            onBlur={handleEditorBlur}
+            style={{
+              minHeight: minHeight || '150px',
+              maxHeight: maxHeight || '500px',
+              paddingLeft: paddingLeft || '12px'
+            }}
+            className={`rte-content${editable ? " rte-is-editable" : ""}${editorFocused ? " rte-is-focused" : ""}`}
+          />
+          {isEmpty && editable && disabled !== true && (
+            <div
+              className="rte-placeholder"
+              style={{ left: paddingLeft || '12px' }}
+              aria-hidden="true"
+            >
+              {placeholder}
+            </div>
+          )}
+        </div>
+        {renderMediaToolbar()}
 
         
         {/* Footer with Character/Word Count */}
@@ -2238,36 +2404,34 @@ export default function RichTextEditor({
         {linkModalOpen && (
           <div className="rte-modal-overlay" onClick={cancelLink}>
             <div className="rte-modal" onClick={(e) => e.stopPropagation()}>
-              <h3 className="rte-modal-title">Insert Link</h3>
-              <div className="rte-modal-divider"></div>
-              <div className="rte-modal-body">
-                <div className="rte-form-group">
-                  <label className="rte-label">Link Text</label>
-                  <input
-                    type="text"
-                    className="rte-input"
-                    placeholder="e.g. Google"
-                    value={linkText}
-                    onChange={(e) => setLinkText(e.target.value)}
-                  />
-                </div>
-                <div className="rte-form-group">
-                  <label className="rte-label">URL</label>
-                  <input
-                    type="text"
-                    className="rte-input"
-                    placeholder="https://example.com"
-                    value={linkUrl}
-                    onChange={(e) => setLinkUrl(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && confirmLink()}
-                    autoFocus
-                  />
-                </div>
+              <div className="rte-modal-header">
+                <h3 className="rte-modal-title">Insert Link</h3>
               </div>
-              <div className="rte-modal-divider" style={{ margin: '8px 0 20px 0' }}></div>
-              <div className="rte-modal-footer">
-                <button type="button" className="rte-btn rte-btn-secondary" onClick={cancelLink}>Cancel</button>
-                <button type="button" className="rte-btn rte-btn-primary" onClick={confirmLink} disabled={!linkUrl}>Insert</button>
+              <div className="rte-form-group">
+                <label className="rte-label">Link Text</label>
+                <input
+                  type="text"
+                  className="rte-input"
+                  placeholder="e.g. Google"
+                  value={linkText}
+                  onChange={(e) => setLinkText(e.target.value)}
+                />
+              </div>
+              <div className="rte-form-group">
+                <label className="rte-label">URL</label>
+                <input
+                  type="text"
+                  className="rte-input"
+                  placeholder="https://example.com"
+                  value={linkUrl}
+                  onChange={(e) => setLinkUrl(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && confirmLink()}
+                  autoFocus
+                />
+              </div>
+              <div className="rte-modal-actions">
+                <button type="button" className="rte-button rte-button-secondary" onClick={cancelLink}>Cancel</button>
+                <button type="button" className="rte-button rte-button-primary" onClick={confirmLink} disabled={!linkUrl}>Insert</button>
               </div>
             </div>
           </div>
