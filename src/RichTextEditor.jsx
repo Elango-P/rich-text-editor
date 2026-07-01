@@ -21,6 +21,109 @@ const escapeAttr = (str) => escapeHtml(str).replace(/"/g, "&quot;");
 // URL detection regex
 const URL_REGEX = /(https?:\/\/[^\s]+)/g;
 
+const TRANSPARENT_BACKGROUNDS = new Set([
+  "",
+  "transparent",
+  "initial",
+  "inherit",
+  "rgba(0, 0, 0, 0)",
+  "rgb(0, 0, 0, 0)",
+]);
+
+const isTransparentBackground = (value) => {
+  if (!value) return true;
+  const normalized = value.trim().toLowerCase();
+  if (TRANSPARENT_BACKGROUNDS.has(normalized)) return true;
+  const match = normalized.match(
+    /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)$/
+  );
+  if (match?.[4] !== undefined && parseFloat(match[4]) === 0) return true;
+  return false;
+};
+
+const unwrapNode = (element) => {
+  const parent = element.parentNode;
+  if (!parent) return;
+  while (element.firstChild) {
+    parent.insertBefore(element.firstChild, element);
+  }
+  parent.removeChild(element);
+};
+
+const unwrapAreaHighlightBlock = (block) => {
+  if (!block?.classList?.contains("rte-area-highlight-block")) return;
+  const parent = block.parentNode;
+  if (!parent) return;
+  const fragment = document.createDocumentFragment();
+  while (block.firstChild) {
+    fragment.appendChild(block.firstChild);
+  }
+  parent.insertBefore(fragment, block);
+  parent.removeChild(block);
+};
+
+const stripInlineBackground = (element) => {
+  if (!(element instanceof HTMLElement)) return;
+
+  if (element.classList.contains("rte-block-highlight")) {
+    element.classList.remove("rte-block-highlight");
+  }
+
+  if (element.tagName === "MARK") {
+    unwrapNode(element);
+    return;
+  }
+
+  const hadBackground =
+    (element.style.backgroundColor && !isTransparentBackground(element.style.backgroundColor)) ||
+    (element.style.background && !isTransparentBackground(element.style.background));
+
+  if (!hadBackground) return;
+
+  element.style.backgroundColor = "";
+  element.style.background = "";
+
+  if (!element.getAttribute("style")) {
+    element.removeAttribute("style");
+  }
+
+  const tag = element.tagName;
+  if (
+    (tag === "SPAN" || tag === "FONT") &&
+    !element.className &&
+    element.attributes.length === 0
+  ) {
+    unwrapNode(element);
+  }
+};
+
+const collectElementsInRange = (range, root) => {
+  const elements = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+  let node = walker.currentNode;
+  while (node) {
+    if (range.intersectsNode(node)) {
+      elements.push(node);
+    }
+    node = walker.nextNode();
+  }
+  return elements;
+};
+
+const elementHasRemovableBackground = (element) => {
+  if (!(element instanceof HTMLElement)) return false;
+  if (element.classList.contains("rte-area-highlight-block")) return true;
+  if (element.classList.contains("rte-block-highlight")) return true;
+  if (element.tagName === "MARK") return true;
+  if (element.style?.backgroundColor && !isTransparentBackground(element.style.backgroundColor)) {
+    return true;
+  }
+  if (element.style?.background && !isTransparentBackground(element.style.background)) {
+    return true;
+  }
+  return false;
+};
+
 const rectsIntersect = (a, b) =>
   !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
 
@@ -68,28 +171,69 @@ const getIntersectingBlocks = (editor, clientRect) => {
   );
 };
 
-const insertAreaHighlightRegion = (editor, clientRect, color) => {
-  const editorRect = editor.getBoundingClientRect();
-  const clipped = clipRectToBounds(clientRect, editorRect);
+const isHighlightableBlock = (block) => {
+  const text = (block.textContent || "").replace(/[\u00A0\u200B\s]/g, "");
+  if (text.length > 0) return true;
+  return !!block.querySelector(
+    "img, table, iframe, .image-container, .video-container, svg"
+  );
+};
+
+const createAreaHighlightWrapper = (color, textAlign, clipped, editorRect) => {
   const widthPx = Math.max(40, Math.round(clipped.width));
   const heightPx = Math.max(24, Math.round(clipped.height));
 
   const region = document.createElement("div");
   region.className = "rte-area-highlight-block";
   region.style.backgroundColor = color;
-  region.style.minHeight = `${heightPx}px`;
-  region.style.width = `${widthPx}px`;
-  region.style.maxWidth = "100%";
-  region.style.boxSizing = "border-box";
-  region.style.padding = "12px";
-  region.style.borderRadius = "4px";
-  region.style.margin = "8px 0";
   region.style.display = "block";
+  region.style.width = `${widthPx}px`;
+  region.style.minHeight = `${heightPx}px`;
+  region.style.maxWidth = "100%";
+  region.style.padding = "6px 10px";
+  region.style.borderRadius = "4px";
+  region.style.margin = "4px 0";
+  region.style.boxSizing = "border-box";
 
-  const blocks = getIntersectingBlocks(editor, clipped);
+  if (textAlign === "center") {
+    region.style.marginLeft = "auto";
+    region.style.marginRight = "auto";
+  } else if (textAlign === "right" || textAlign === "end") {
+    region.style.marginLeft = "auto";
+    region.style.marginRight = "0";
+  } else {
+    const leftOffset = Math.max(0, Math.round(clipped.left - editorRect.left));
+    region.style.marginLeft = `${leftOffset}px`;
+    region.style.marginRight = "auto";
+  }
+
+  return region;
+};
+
+const insertAreaHighlightRegion = (editor, clientRect, color) => {
+  const editorRect = editor.getBoundingClientRect();
+  const clipped = clipRectToBounds(clientRect, editorRect);
+
+  const blocks = getIntersectingBlocks(editor, clipped).filter(isHighlightableBlock);
 
   if (blocks.length > 0) {
     const first = blocks[0];
+    const textAlign = window.getComputedStyle(first).textAlign;
+    const region = createAreaHighlightWrapper(color, textAlign, clipped, editorRect);
+
+    let totalBlockHeight = 0;
+    blocks.forEach((block) => {
+      totalBlockHeight += block.getBoundingClientRect().height;
+    });
+    const targetHeight = Math.max(24, Math.round(clipped.height));
+    const innerPadding = 12;
+    const extraVertical = Math.max(0, targetHeight - totalBlockHeight - innerPadding);
+    if (extraVertical > 0) {
+      const pad = Math.round(extraVertical / 2);
+      region.style.paddingTop = `${6 + pad}px`;
+      region.style.paddingBottom = `${6 + pad}px`;
+    }
+
     if (first.parentNode) {
       first.parentNode.insertBefore(region, first);
     } else {
@@ -97,8 +241,6 @@ const insertAreaHighlightRegion = (editor, clientRect, color) => {
     }
 
     blocks.forEach((block) => {
-      block.style.backgroundColor = "";
-      block.style.borderRadius = "";
       region.appendChild(block);
     });
     return true;
@@ -111,6 +253,14 @@ const insertAreaHighlightRegion = (editor, clientRect, color) => {
     ) ||
     caretRangeFromClientPoint(clipped.left + 4, clipped.top + 4);
 
+  let alignNode = insertRange?.startContainer;
+  if (alignNode?.nodeType === 3) alignNode = alignNode.parentNode;
+  const textAlign =
+    alignNode instanceof HTMLElement
+      ? window.getComputedStyle(alignNode).textAlign
+      : "left";
+
+  const region = createAreaHighlightWrapper(color, textAlign, clipped, editorRect);
   region.innerHTML = "&nbsp;";
 
   if (insertRange && editor.contains(insertRange.startContainer)) {
@@ -519,7 +669,7 @@ export default function RichTextEditor({
       setIsItalic(false);
       setIsUnderline(false);
       setFontColor("#000000");
-      setBgColor("#ffff00");
+      setHasActiveTextBackground(false);
       return;
     }
     const container =
@@ -545,7 +695,7 @@ export default function RichTextEditor({
       // ✅ Get computed color from container
       const computedColor = window.getComputedStyle(container).color;
       setFontColor(rgbToHex(computedColor));
-      setBgColor(getBackgroundColorAtCursor());
+      syncBackgroundColorState();
 
     } else {
       // Text selected, use execCommand state
@@ -561,7 +711,7 @@ export default function RichTextEditor({
 
       const computedColor = window.getComputedStyle(container).color;
       setFontColor(rgbToHex(computedColor));
-      setBgColor(getBackgroundColorAtCursor());
+      syncBackgroundColorState();
     }
   };
 
@@ -608,33 +758,42 @@ export default function RichTextEditor({
 
   const getBackgroundColorAtCursor = () => {
     const sel = window.getSelection();
-    if (!sel || !sel.rangeCount || !editorRef.current) return "#ffff00";
+    if (!sel || !sel.rangeCount || !editorRef.current) return null;
 
     let node = sel.anchorNode;
     if (node.nodeType === 3) node = node.parentNode;
 
     while (node && node !== editorRef.current) {
-      if (node.nodeType === 1 && node.style?.backgroundColor) {
-        const bg = node.style.backgroundColor;
-        if (bg && bg !== "transparent" && bg !== "rgba(0, 0, 0, 0)") {
-          return rgbToHex(bg);
+      if (node.nodeType === 1) {
+        if (node.classList?.contains("rte-area-highlight-block")) {
+          const bg = node.style.backgroundColor;
+          return bg && !isTransparentBackground(bg) ? rgbToHex(bg) : null;
+        }
+        if (node.classList?.contains("rte-block-highlight")) {
+          const bg = node.style.backgroundColor;
+          return bg && !isTransparentBackground(bg) ? rgbToHex(bg) : null;
+        }
+        const inlineBg = node.style?.backgroundColor;
+        if (inlineBg && !isTransparentBackground(inlineBg)) {
+          return rgbToHex(inlineBg);
+        }
+        if (node.tagName === "MARK") {
+          const markBg = window.getComputedStyle(node).backgroundColor;
+          return markBg && !isTransparentBackground(markBg) ? rgbToHex(markBg) : null;
         }
       }
       node = node.parentNode;
     }
 
-    const computedBg = window.getComputedStyle(
-      sel.anchorNode.nodeType === 3 ? sel.anchorNode.parentNode : sel.anchorNode
-    ).backgroundColor;
+    return null;
+  };
 
-    if (
-      !computedBg ||
-      computedBg === "transparent" ||
-      computedBg === "rgba(0, 0, 0, 0)"
-    ) {
-      return "#ffff00";
+  const syncBackgroundColorState = () => {
+    const activeBg = getBackgroundColorAtCursor();
+    setHasActiveTextBackground(!!activeBg);
+    if (activeBg) {
+      setBgColor(activeBg);
     }
-    return rgbToHex(computedBg);
   };
 
   const stripEditorChrome = (root) => {
@@ -949,12 +1108,14 @@ export default function RichTextEditor({
         setIsUnderline(isParentStyle(container, "U", "underline"));
         const computedColor = window.getComputedStyle(container).color;
         setFontColor(rgbToHex(computedColor));
+        syncBackgroundColorState();
       } else {
         setIsBold(document.queryCommandState("bold"));
         setIsItalic(document.queryCommandState("italic"));
         setIsUnderline(document.queryCommandState("underline"));
         const computedColor = window.getComputedStyle(container).color;
         setFontColor(rgbToHex(computedColor));
+        syncBackgroundColorState();
       }
 
       // 3. Current Font Size
@@ -987,6 +1148,7 @@ export default function RichTextEditor({
 
   const [fontColor, setFontColor] = useState("#000000");
   const [bgColor, setBgColor] = useState("#ffff00");
+  const [hasActiveTextBackground, setHasActiveTextBackground] = useState(false);
 
   useEffect(() => {
     bgColorRef.current = bgColor;
@@ -1014,6 +1176,7 @@ export default function RichTextEditor({
 
   const applyBackgroundColor = (color) => {
     setBgColor(color);
+    setHasActiveTextBackground(true);
     focus();
     restoreSavedSelection();
     document.execCommand("styleWithCSS", false, true);
@@ -1022,6 +1185,107 @@ export default function RichTextEditor({
     }
     document.execCommand("styleWithCSS", false, false);
     triggerChange();
+  };
+
+  const clearMediaHighlightStyles = (editor) => {
+    editor.querySelectorAll(".image-container, .video-container, td, th").forEach((element) => {
+      if (!editor.contains(element)) return;
+      if (
+        !element.style.backgroundColor &&
+        !element.style.padding &&
+        !element.style.borderRadius
+      ) {
+        return;
+      }
+      element.style.backgroundColor = "";
+      element.style.padding = "";
+      element.style.borderRadius = "";
+      if (!element.getAttribute("style")) {
+        element.removeAttribute("style");
+      }
+    });
+  };
+
+  const removeBackgroundColor = () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    focus();
+    restoreSavedSelection();
+
+    const sel = window.getSelection();
+    const range = sel?.rangeCount ? sel.getRangeAt(0) : null;
+
+    document.execCommand("styleWithCSS", false, true);
+    document.execCommand("hiliteColor", false, "transparent");
+    document.execCommand("backColor", false, "transparent");
+    document.execCommand("styleWithCSS", false, false);
+
+    const processElement = (element) => {
+      if (!editor.contains(element)) return;
+
+      if (element.classList?.contains("rte-area-highlight-block")) {
+        unwrapAreaHighlightBlock(element);
+        return;
+      }
+
+      if (
+        element.classList?.contains("image-container") ||
+        element.classList?.contains("video-container")
+      ) {
+        element.style.backgroundColor = "";
+        element.style.padding = "";
+        element.style.borderRadius = "";
+        if (!element.getAttribute("style")) {
+          element.removeAttribute("style");
+        }
+        return;
+      }
+
+      stripInlineBackground(element);
+    };
+
+    if (range && editor.contains(range.commonAncestorContainer)) {
+      const elements = collectElementsInRange(range, editor)
+        .filter(elementHasRemovableBackground)
+        .reverse();
+      elements.forEach(processElement);
+
+      if (range.collapsed) {
+        let node = range.startContainer;
+        if (node.nodeType === 3) node = node.parentNode;
+        while (node && node !== editor) {
+          if (elementHasRemovableBackground(node)) {
+            processElement(node);
+            break;
+          }
+          node = node.parentNode;
+        }
+      }
+    } else {
+      [...editor.querySelectorAll(".rte-area-highlight-block")].forEach(unwrapAreaHighlightBlock);
+      [...editor.querySelectorAll("mark")].forEach((mark) => unwrapNode(mark));
+      [...editor.querySelectorAll("[style*='background']")].forEach((element) => {
+        if (editor.contains(element)) {
+          stripInlineBackground(element);
+        }
+      });
+    }
+
+    clearMediaHighlightStyles(editor);
+
+    editor.querySelectorAll("span[style], font[style]").forEach((element) => {
+      if (!editor.contains(element)) return;
+      if (!element.style.backgroundColor && !element.style.background) {
+        if (!element.getAttribute("style")) {
+          unwrapNode(element);
+        }
+      }
+    });
+
+    setHasActiveTextBackground(false);
+    triggerChange();
+    focus();
   };
 
   const applyMarqueeHighlight = useCallback((clientRect, color) => {
@@ -1039,6 +1303,10 @@ export default function RichTextEditor({
     }
 
     insertAreaHighlightRegion(editor, clippedRect, color);
+
+    setAreaHighlightMode(false);
+    setMarqueePreview(null);
+    areaDragRef.current = null;
 
     editor.querySelectorAll("td, th").forEach((cell) => {
       if (!editor.contains(cell)) return;
@@ -2011,12 +2279,7 @@ export default function RichTextEditor({
     setCurrentFontSize("16");
     setCurrentLineHeight("");
     setFontColor("#000000");
-    setBgColor("#ffff00");
-    document.execCommand("styleWithCSS", false, true);
-    document.execCommand("hiliteColor", false, "transparent");
-    document.execCommand("backColor", false, "transparent");
-    document.execCommand("styleWithCSS", false, false);
-    triggerChange();
+    removeBackgroundColor();
     focus();
   };
 
@@ -2707,8 +2970,12 @@ export default function RichTextEditor({
               className="rte-color-picker-label rte-bg-color-picker-label"
             >
               <span
-                className="rte-bg-color-swatch"
-                style={{ backgroundColor: bgColor, color: fontColor }}
+                className={`rte-bg-color-swatch${hasActiveTextBackground ? "" : " rte-bg-color-swatch-none"}`}
+                style={
+                  hasActiveTextBackground
+                    ? { backgroundColor: bgColor, color: fontColor }
+                    : { color: fontColor }
+                }
               >
                 A
               </span>
@@ -2731,6 +2998,20 @@ export default function RichTextEditor({
                 className="rte-color-input"
               />
             </label>
+
+            <button
+              type="button"
+              title="Remove background color"
+              className={`rte-toolbar-button rte-bg-color-clear${hasActiveTextBackground ? " active" : ""}`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                saveSelection();
+                removeBackgroundColor();
+              }}
+            >
+              <span className="rte-bg-color-clear-icon" aria-hidden="true">A</span>
+            </button>
 
             <button
               type="button"
