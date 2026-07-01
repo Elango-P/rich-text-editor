@@ -21,6 +21,134 @@ const escapeAttr = (str) => escapeHtml(str).replace(/"/g, "&quot;");
 // URL detection regex
 const URL_REGEX = /(https?:\/\/[^\s]+)/g;
 
+const rectsIntersect = (a, b) =>
+  !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
+
+const caretRangeFromClientPoint = (x, y) => {
+  if (document.caretRangeFromPoint) {
+    return document.caretRangeFromPoint(x, y);
+  }
+  const position = document.caretPositionFromPoint?.(x, y);
+  if (!position) return null;
+  const range = document.createRange();
+  range.setStart(position.offsetNode, position.offset);
+  range.collapse(true);
+  return range;
+};
+
+const clipRectToBounds = (rect, bounds) => {
+  const left = Math.max(rect.left, bounds.left);
+  const top = Math.max(rect.top, bounds.top);
+  const right = Math.min(rect.right, bounds.right);
+  const bottom = Math.min(rect.bottom, bounds.bottom);
+  return {
+    left,
+    top,
+    right,
+    bottom,
+    width: Math.max(0, right - left),
+    height: Math.max(0, bottom - top),
+  };
+};
+
+const BLOCK_SELECTOR =
+  "h1, h2, h3, h4, h5, h6, p, blockquote, li, td, th, div:not(.rte-area-highlight-block):not(.image-container):not(.video-container):not(.image-media-frame)";
+
+const getIntersectingBlocks = (editor, clientRect) => {
+  const candidates = [...editor.querySelectorAll(BLOCK_SELECTOR)].filter((el) => {
+    if (el === editor || !editor.contains(el)) return false;
+    if (el.closest(".rte-area-highlight-block, .image-container, .video-container")) {
+      return false;
+    }
+    return rectsIntersect(el.getBoundingClientRect(), clientRect);
+  });
+
+  return candidates.filter(
+    (el) => !candidates.some((other) => other !== el && other.contains(el))
+  );
+};
+
+const insertAreaHighlightRegion = (editor, clientRect, color) => {
+  const editorRect = editor.getBoundingClientRect();
+  const clipped = clipRectToBounds(clientRect, editorRect);
+  const widthPx = Math.max(40, Math.round(clipped.width));
+  const heightPx = Math.max(24, Math.round(clipped.height));
+
+  const region = document.createElement("div");
+  region.className = "rte-area-highlight-block";
+  region.style.backgroundColor = color;
+  region.style.minHeight = `${heightPx}px`;
+  region.style.width = `${widthPx}px`;
+  region.style.maxWidth = "100%";
+  region.style.boxSizing = "border-box";
+  region.style.padding = "12px";
+  region.style.borderRadius = "4px";
+  region.style.margin = "8px 0";
+  region.style.display = "block";
+
+  const blocks = getIntersectingBlocks(editor, clipped);
+
+  if (blocks.length > 0) {
+    const first = blocks[0];
+    if (first.parentNode) {
+      first.parentNode.insertBefore(region, first);
+    } else {
+      editor.appendChild(region);
+    }
+
+    blocks.forEach((block) => {
+      block.style.backgroundColor = "";
+      block.style.borderRadius = "";
+      region.appendChild(block);
+    });
+    return true;
+  }
+
+  const insertRange =
+    caretRangeFromClientPoint(
+      clipped.left + clipped.width / 2,
+      clipped.top + Math.min(8, clipped.height / 2)
+    ) ||
+    caretRangeFromClientPoint(clipped.left + 4, clipped.top + 4);
+
+  region.innerHTML = "&nbsp;";
+
+  if (insertRange && editor.contains(insertRange.startContainer)) {
+    insertRange.collapse(true);
+    let node = insertRange.startContainer;
+    if (node.nodeType === 3) node = node.parentNode;
+
+    while (node && node !== editor && node.parentNode !== editor) {
+      node = node.parentNode;
+    }
+
+    if (node && node !== editor && editor.contains(node)) {
+      node.parentNode.insertBefore(region, node);
+    } else {
+      editor.appendChild(region);
+    }
+  } else {
+    editor.appendChild(region);
+  }
+
+  return true;
+};
+
+const getClientRectFromDrag = (startX, startY, currentX, currentY) => {
+  const left = Math.min(startX, currentX);
+  const top = Math.min(startY, currentY);
+  const right = Math.max(startX, currentX);
+  const bottom = Math.max(startY, currentY);
+  return {
+    left,
+    top,
+    right,
+    bottom,
+    width: right - left,
+    height: bottom - top,
+  };
+};
+
 export default function RichTextEditor({
   onChange,
   showEditButton,
@@ -40,8 +168,11 @@ export default function RichTextEditor({
 }) {
 
   const editorRef = useRef(null);
+  const contentWrapperRef = useRef(null);
   const fileInputRef = useRef(null);
   const scrollTopRef = useRef(0);
+  const areaDragRef = useRef(null);
+  const bgColorRef = useRef("#ffff00");
 
   const [html, setHtml] = useState("");
   const [linkModalOpen, setLinkModalOpen] = useState(false);
@@ -88,8 +219,12 @@ export default function RichTextEditor({
   const [selectionVersion, setSelectionVersion] = useState(0);
 
   const [selectedMedia, setSelectedMedia] = useState(null);
+  const [mediaWidthInput, setMediaWidthInput] = useState("100");
+  const [mediaWidthUnit, setMediaWidthUnit] = useState("%");
   const [metrics, setMetrics] = useState({ words: 0, chars: 0 });
   const [isEmpty, setIsEmpty] = useState(!value);
+  const [areaHighlightMode, setAreaHighlightMode] = useState(false);
+  const [marqueePreview, setMarqueePreview] = useState(null);
 
   const updateMetrics = useCallback(() => {
     if (!editorRef.current) return;
@@ -383,7 +518,8 @@ export default function RichTextEditor({
       setIsBold(false);
       setIsItalic(false);
       setIsUnderline(false);
-      setFontColor("#000000"); // default
+      setFontColor("#000000");
+      setBgColor("#ffff00");
       return;
     }
     const container =
@@ -409,6 +545,7 @@ export default function RichTextEditor({
       // ✅ Get computed color from container
       const computedColor = window.getComputedStyle(container).color;
       setFontColor(rgbToHex(computedColor));
+      setBgColor(getBackgroundColorAtCursor());
 
     } else {
       // Text selected, use execCommand state
@@ -424,6 +561,7 @@ export default function RichTextEditor({
 
       const computedColor = window.getComputedStyle(container).color;
       setFontColor(rgbToHex(computedColor));
+      setBgColor(getBackgroundColorAtCursor());
     }
   };
 
@@ -466,6 +604,37 @@ export default function RichTextEditor({
       sel.anchorNode.nodeType === 3 ? sel.anchorNode.parentNode : sel.anchorNode
     ).color;
     return rgbToHex(computedColor);
+  };
+
+  const getBackgroundColorAtCursor = () => {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !editorRef.current) return "#ffff00";
+
+    let node = sel.anchorNode;
+    if (node.nodeType === 3) node = node.parentNode;
+
+    while (node && node !== editorRef.current) {
+      if (node.nodeType === 1 && node.style?.backgroundColor) {
+        const bg = node.style.backgroundColor;
+        if (bg && bg !== "transparent" && bg !== "rgba(0, 0, 0, 0)") {
+          return rgbToHex(bg);
+        }
+      }
+      node = node.parentNode;
+    }
+
+    const computedBg = window.getComputedStyle(
+      sel.anchorNode.nodeType === 3 ? sel.anchorNode.parentNode : sel.anchorNode
+    ).backgroundColor;
+
+    if (
+      !computedBg ||
+      computedBg === "transparent" ||
+      computedBg === "rgba(0, 0, 0, 0)"
+    ) {
+      return "#ffff00";
+    }
+    return rgbToHex(computedBg);
   };
 
   const stripEditorChrome = (root) => {
@@ -519,9 +688,33 @@ export default function RichTextEditor({
     return 100;
   };
 
+  const getMediaWidthPx = (container) => {
+    if (!container) return 0;
+    if (container.dataset.widthPx) {
+      return Number(container.dataset.widthPx);
+    }
+    const width = container.style.width || "";
+    if (width.endsWith("px")) {
+      return parseInt(width, 10) || 0;
+    }
+    return Math.round(container.getBoundingClientRect().width);
+  };
+
+  const syncMediaWidthControls = (container) => {
+    if (!container) return;
+    if (container.dataset.widthPx) {
+      setMediaWidthInput(String(getMediaWidthPx(container)));
+      setMediaWidthUnit("px");
+      return;
+    }
+    setMediaWidthInput(String(getMediaWidthPercent(container)));
+    setMediaWidthUnit("%");
+  };
+
   const applyMediaWidthPercent = (container, percent) => {
     if (!container) return;
-    const clamped = Math.max(25, Math.min(100, Math.round(percent)));
+    const clamped = Math.max(10, Math.min(100, Math.round(percent)));
+    delete container.dataset.widthPx;
     container.dataset.widthPercent = String(clamped);
     container.style.width = `${clamped}%`;
     container.style.maxWidth = "100%";
@@ -545,8 +738,39 @@ export default function RichTextEditor({
     }
   };
 
+  const applyMediaWidthPx = (container, px) => {
+    if (!container) return;
+    const clamped = Math.max(20, Math.min(2000, Math.round(px)));
+    delete container.dataset.widthPercent;
+    container.dataset.widthPx = String(clamped);
+    container.style.width = `${clamped}px`;
+    container.style.maxWidth = "100%";
+    container.style.marginLeft = "";
+    container.style.marginTop = "";
+
+    if (container.classList.contains("video-container")) {
+      container.style.height = "0";
+      container.style.paddingBottom = "56.25%";
+      return;
+    }
+
+    const frame = getImageMediaTarget(container);
+    if (!frame) return;
+    frame.style.width = "100%";
+    frame.style.height = "";
+    const img = frame.querySelector("img");
+    if (img) {
+      img.style.height = "auto";
+      img.style.objectFit = "";
+    }
+  };
+
   const normalizeMediaWidth = (container) => {
     if (!container) return;
+    if (container.dataset.widthPx) {
+      applyMediaWidthPx(container, Number(container.dataset.widthPx));
+      return;
+    }
     if (container.classList.contains("image-small")) {
       container.classList.remove("image-small");
       applyMediaWidthPercent(container, 50);
@@ -562,11 +786,7 @@ export default function RichTextEditor({
       return;
     }
     if (width.endsWith("px")) {
-      const editorWidth = getEditorInnerWidth();
-      const px = parseFloat(width);
-      if (editorWidth > 0 && px > 0) {
-        applyMediaWidthPercent(container, Math.round((px / editorWidth) * 100));
-      }
+      applyMediaWidthPx(container, parseFloat(width));
       return;
     }
     if (container.classList.contains("video-container")) {
@@ -616,13 +836,19 @@ export default function RichTextEditor({
 
       const onMouseMove = (moveEvent) => {
         const nextWidth = Math.max(60, startWidth + (moveEvent.clientX - startX));
-        const percent = Math.round((nextWidth / editorWidth) * 100);
-        applyMediaWidthPercent(container, percent);
+        if (container.dataset.widthPx) {
+          applyMediaWidthPx(container, nextWidth);
+        } else {
+          const percent = Math.round((nextWidth / editorWidth) * 100);
+          applyMediaWidthPercent(container, percent);
+        }
       };
 
       const onMouseUp = () => {
         document.removeEventListener("mousemove", onMouseMove);
         document.removeEventListener("mouseup", onMouseUp);
+        syncMediaWidthControls(container);
+        setSelectionVersion((v) => v + 1);
         triggerChange();
       };
 
@@ -760,13 +986,155 @@ export default function RichTextEditor({
   };
 
   const [fontColor, setFontColor] = useState("#000000");
+  const [bgColor, setBgColor] = useState("#ffff00");
+
+  useEffect(() => {
+    bgColorRef.current = bgColor;
+  }, [bgColor]);
 
   const getActiveTextColor = () => getColorAtCursor() || fontColor;
 
-  const handleColorChange = (color) => {
-    setFontColor(color);
-    exec("foreColor", color);
+  const restoreSavedSelection = () => {
+    if (!selectionRangeRef.current) return;
+    const sel = window.getSelection();
+    if (!sel) return;
+    sel.removeAllRanges();
+    sel.addRange(selectionRangeRef.current);
   };
+
+  const applyTextColor = (color) => {
+    setFontColor(color);
+    focus();
+    restoreSavedSelection();
+    document.execCommand("styleWithCSS", false, true);
+    document.execCommand("foreColor", false, color);
+    document.execCommand("styleWithCSS", false, false);
+    triggerChange();
+  };
+
+  const applyBackgroundColor = (color) => {
+    setBgColor(color);
+    focus();
+    restoreSavedSelection();
+    document.execCommand("styleWithCSS", false, true);
+    if (!document.execCommand("hiliteColor", false, color)) {
+      document.execCommand("backColor", false, color);
+    }
+    document.execCommand("styleWithCSS", false, false);
+    triggerChange();
+  };
+
+  const applyMarqueeHighlight = useCallback((clientRect, color) => {
+    const editor = editorRef.current;
+    if (!editor || clientRect.width < 10 || clientRect.height < 10) {
+      return;
+    }
+
+    editor.focus();
+
+    const editorRect = editor.getBoundingClientRect();
+    const clippedRect = clipRectToBounds(clientRect, editorRect);
+    if (clippedRect.width < 10 || clippedRect.height < 10) {
+      return;
+    }
+
+    insertAreaHighlightRegion(editor, clippedRect, color);
+
+    editor.querySelectorAll("td, th").forEach((cell) => {
+      if (!editor.contains(cell)) return;
+      if (cell.closest(".rte-area-highlight-block")) return;
+      if (rectsIntersect(cell.getBoundingClientRect(), clippedRect)) {
+        cell.style.backgroundColor = color;
+      }
+    });
+
+    editor.querySelectorAll(".image-container, .video-container").forEach((media) => {
+      if (!editor.contains(media)) return;
+      if (rectsIntersect(media.getBoundingClientRect(), clippedRect)) {
+        media.style.backgroundColor = color;
+        media.style.padding = "4px";
+        media.style.borderRadius = "4px";
+      }
+    });
+
+    updateMetrics();
+    triggerChange();
+    focus();
+  }, [triggerChange, updateMetrics]);
+
+  const handleAreaSelectMouseDown = useCallback((e) => {
+    if (!areaHighlightMode || !editable || disabled) return;
+    if (e.button !== 0) return;
+    if (e.target.closest(".rte-toolbar, .rte-media-toolbar, .rte-modal-overlay")) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const wrapper = contentWrapperRef.current;
+    if (!wrapper) return;
+
+    const wrapperRect = wrapper.getBoundingClientRect();
+    areaDragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      currentX: e.clientX,
+      currentY: e.clientY,
+      wrapperRect,
+    };
+
+    const updatePreview = (clientX, clientY) => {
+      const drag = areaDragRef.current;
+      if (!drag) return;
+
+      drag.currentX = clientX;
+      drag.currentY = clientY;
+
+      const rect = getClientRectFromDrag(
+        drag.startX,
+        drag.startY,
+        drag.currentX,
+        drag.currentY
+      );
+
+      setMarqueePreview({
+        left: rect.left - drag.wrapperRect.left,
+        top: rect.top - drag.wrapperRect.top,
+        width: rect.width,
+        height: rect.height,
+      });
+    };
+
+    const onMove = (ev) => {
+      ev.preventDefault();
+      updatePreview(ev.clientX, ev.clientY);
+    };
+
+    const onUp = (ev) => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+
+      const drag = areaDragRef.current;
+      areaDragRef.current = null;
+      setMarqueePreview(null);
+
+      if (!drag) return;
+
+      const clientRect = getClientRectFromDrag(
+        drag.startX,
+        drag.startY,
+        ev.clientX,
+        ev.clientY
+      );
+
+      requestAnimationFrame(() => {
+        applyMarqueeHighlight(clientRect, bgColorRef.current);
+      });
+    };
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    updatePreview(e.clientX, e.clientY);
+  }, [areaHighlightMode, editable, disabled, applyMarqueeHighlight]);
 
   const addLink = () => {
     const sel = window.getSelection();
@@ -1064,10 +1432,26 @@ export default function RichTextEditor({
               "image-delete-button",
               () => {
                 existingWrapper.remove();
+                clearMediaSelection();
                 triggerChange && triggerChange();
               }
             )
           );
+        }
+        if (!existingWrapper.dataset.mediaEnhanced) {
+          existingWrapper.dataset.mediaEnhanced = "true";
+          existingWrapper.addEventListener("click", (event) => {
+            if (event.target.closest(".image-delete-button, .media-resize-handle")) return;
+            event.preventDefault();
+            event.stopPropagation();
+            selectMediaContainer(existingWrapper);
+          });
+          img.addEventListener("dblclick", (event) => {
+            if (event.target.closest(".image-delete-button, .media-resize-handle")) return;
+            event.preventDefault();
+            event.stopPropagation();
+            openImageModal(img.src);
+          });
         }
         attachMediaResizeHandle(existingWrapper);
         normalizeMediaWidth(existingWrapper);
@@ -1159,14 +1543,38 @@ export default function RichTextEditor({
           selectMediaContainer(container);
         });
 
+        container.style.cursor = editable ? "pointer" : "default";
+        container.dataset.mediaEnhanced = "true";
+        container.addEventListener("click", (event) => {
+          if (event.target.closest(".image-delete-button, .media-resize-handle")) return;
+          event.preventDefault();
+          event.stopPropagation();
+          selectMediaContainer(container);
+        });
+
+        const deleteBtn = createMediaDeleteButton(
+          "Remove image",
+          "image-delete-button",
+          () => {
+            container.remove();
+            clearMediaSelection();
+            triggerChange();
+          }
+        );
+
         frame.appendChild(img);
+        frame.appendChild(deleteBtn);
         container.appendChild(frame);
-        applyMediaWidthPercent(container, 25);
+        attachMediaResizeHandle(container);
+        applyMediaWidthPercent(container, 50);
 
         // Insert at cursor position
         insertNodeAtCursor(container);
         requestAnimationFrame(() => {
           processExistingMedia(editorRef.current);
+          selectMediaContainer(container);
+          syncMediaWidthControls(container);
+          editorRef.current?.focus();
           triggerChange();
         });
       }
@@ -1376,6 +1784,33 @@ export default function RichTextEditor({
   };
 
   const handleKeyDown = useCallback((e) => {
+    if (e.key === "Escape") {
+      if (areaHighlightMode) {
+        e.preventDefault();
+        areaDragRef.current = null;
+        setMarqueePreview(null);
+        setAreaHighlightMode(false);
+        return;
+      }
+      if (selectedMedia) {
+        e.preventDefault();
+        clearMediaSelection();
+        return;
+      }
+    }
+
+    if (
+      (e.key === "Delete" || e.key === "Backspace") &&
+      selectedMedia?.classList.contains("rte-media-selected") &&
+      editorRef.current?.contains(selectedMedia)
+    ) {
+      e.preventDefault();
+      selectedMedia.remove();
+      clearMediaSelection();
+      triggerChange();
+      return;
+    }
+
     if (applyMarkdownShortcut(e)) return;
 
     // Handle Enter key
@@ -1525,7 +1960,7 @@ export default function RichTextEditor({
       e.preventDefault();
       exec("underline");
     }
-  }, [exec, triggerChange, fontColor]);
+  }, [exec, triggerChange, fontColor, areaHighlightMode, selectedMedia]);
 
   const confirmLink = () => {
     // Add protocol if missing
@@ -1576,6 +2011,11 @@ export default function RichTextEditor({
     setCurrentFontSize("16");
     setCurrentLineHeight("");
     setFontColor("#000000");
+    setBgColor("#ffff00");
+    document.execCommand("styleWithCSS", false, true);
+    document.execCommand("hiliteColor", false, "transparent");
+    document.execCommand("backColor", false, "transparent");
+    document.execCommand("styleWithCSS", false, false);
     triggerChange();
     focus();
   };
@@ -1855,6 +2295,11 @@ export default function RichTextEditor({
   }, [disabled]);
 
   const handleEditorClick = useCallback((e) => {
+    if (areaHighlightMode) {
+      e.preventDefault();
+      return;
+    }
+
     setSelectionVersion(v => v + 1);
 
     const deleteBtn = e.target.closest(
@@ -1874,6 +2319,9 @@ export default function RichTextEditor({
 
     const clickedMedia = e.target.closest('.image-container, .video-container');
     if (clickedMedia && editorRef.current?.contains(clickedMedia) && editable) {
+      e.preventDefault();
+      e.stopPropagation();
+      selectMediaContainer(clickedMedia);
       return;
     }
 
@@ -1906,18 +2354,89 @@ export default function RichTextEditor({
         }
       }, 0);
     }
-  }, [editable, disabled, editorFocused, triggerChange]);
+  }, [areaHighlightMode, editable, disabled, editorFocused, triggerChange]);
+
+  useEffect(() => {
+    if (!selectedMedia) return;
+    syncMediaWidthControls(selectedMedia);
+  }, [selectedMedia, selectionVersion]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || !selectedMedia) return;
+
+    const bumpToolbarPosition = () => setSelectionVersion((v) => v + 1);
+    editor.addEventListener("scroll", bumpToolbarPosition, { passive: true });
+    window.addEventListener("resize", bumpToolbarPosition, { passive: true });
+
+    return () => {
+      editor.removeEventListener("scroll", bumpToolbarPosition);
+      window.removeEventListener("resize", bumpToolbarPosition);
+    };
+  }, [selectedMedia]);
 
   const renderMediaToolbar = () => {
     if (!selectedMedia || !editorRef.current || !editable) return null;
 
-    const editorRect = editorRef.current.getBoundingClientRect();
+    const wrapperEl = contentWrapperRef.current;
+    const anchorRect = wrapperEl?.getBoundingClientRect() ?? editorRef.current.getBoundingClientRect();
     const mediaRect = selectedMedia.getBoundingClientRect();
-    const top = mediaRect.top - editorRect.top + editorRef.current.scrollTop;
-    const left = mediaRect.left - editorRect.left + editorRef.current.scrollLeft;
-    const width = mediaRect.width;
+    const relTop = mediaRect.top - anchorRect.top;
+    const relLeft = mediaRect.left - anchorRect.left;
+    const mediaWidth = mediaRect.width;
+    const mediaHeight = mediaRect.height;
     const currentPercent = getMediaWidthPercent(selectedMedia);
     const widthPresets = [25, 50, 75, 100];
+    const toolbarWidth = 340;
+    const toolbarHeight = 40;
+    const gap = 8;
+    const preferredTop = relTop - toolbarHeight - gap;
+    const toolbarTop =
+      preferredTop >= 4 ? preferredTop : relTop + mediaHeight + gap;
+
+    const applyCustomMediaWidth = () => {
+      const num = parseFloat(mediaWidthInput);
+      if (isNaN(num) || num <= 0) {
+        syncMediaWidthControls(selectedMedia);
+        return;
+      }
+      if (mediaWidthUnit === "px") {
+        applyMediaWidthPx(selectedMedia, num);
+      } else {
+        applyMediaWidthPercent(selectedMedia, num);
+      }
+      syncMediaWidthControls(selectedMedia);
+      setSelectionVersion((v) => v + 1);
+      triggerChange();
+    };
+
+    const handleUnitChange = (newUnit) => {
+      if (newUnit === mediaWidthUnit) return;
+
+      const editorInnerWidth = getEditorInnerWidth();
+      const currentVal = parseFloat(mediaWidthInput);
+      if (isNaN(currentVal) || currentVal <= 0) {
+        setMediaWidthUnit(newUnit);
+        return;
+      }
+
+      let converted = currentVal;
+      if (newUnit === "px" && mediaWidthUnit === "%") {
+        converted = Math.round((editorInnerWidth * currentVal) / 100);
+        applyMediaWidthPx(selectedMedia, converted);
+      } else if (newUnit === "%" && mediaWidthUnit === "px") {
+        converted = Math.min(
+          100,
+          Math.max(10, Math.round((currentVal / editorInnerWidth) * 100))
+        );
+        applyMediaWidthPercent(selectedMedia, converted);
+      }
+
+      setMediaWidthInput(String(converted));
+      setMediaWidthUnit(newUnit);
+      setSelectionVersion((v) => v + 1);
+      triggerChange();
+    };
 
     const handleAlignment = (align) => {
       selectedMedia.classList.remove("image-align-left", "image-align-center", "image-align-right");
@@ -1929,6 +2448,8 @@ export default function RichTextEditor({
 
     const setWidth = (percent) => {
       applyMediaWidthPercent(selectedMedia, percent);
+      syncMediaWidthControls(selectedMedia);
+      setSelectionVersion((v) => v + 1);
       triggerChange();
     };
 
@@ -1939,19 +2460,36 @@ export default function RichTextEditor({
     };
 
     const isActivePercent = (percent) => {
+      if (selectedMedia.dataset.widthPx) return false;
       if (!selectedMedia.dataset.widthPercent && !(selectedMedia.style.width || "").endsWith("%")) {
         return false;
       }
       return Math.abs(currentPercent - percent) <= 3;
     };
 
+    const isFormControl = (target) =>
+      target instanceof Element && !!target.closest("input, select, textarea");
+
     return (
       <div
         className="rte-media-toolbar"
+        onMouseDown={(e) => {
+          e.stopPropagation();
+          if (!isFormControl(e.target)) {
+            e.preventDefault();
+          }
+        }}
+        onClick={(e) => e.stopPropagation()}
         style={{
           position: "absolute",
-          top: Math.max(0, top - 44),
-          left: Math.max(8, left + width / 2 - 156),
+          top: Math.max(4, toolbarTop),
+          left: Math.max(
+            8,
+            Math.min(
+              relLeft + mediaWidth / 2 - toolbarWidth / 2,
+              anchorRect.width - toolbarWidth - 8
+            )
+          ),
           zIndex: 1000,
         }}
       >
@@ -1970,6 +2508,46 @@ export default function RichTextEditor({
             {percent}%
           </button>
         ))}
+        <span className="rte-media-toolbar-divider" />
+        <div className="rte-media-width-custom">
+          <input
+            type="number"
+            className="rte-media-width-input"
+            value={mediaWidthInput}
+            min={mediaWidthUnit === "%" ? 10 : 20}
+            max={mediaWidthUnit === "%" ? 100 : 2000}
+            title="Custom width"
+            onChange={(e) => setMediaWidthInput(e.target.value)}
+            onBlur={(e) => {
+              if (e.relatedTarget?.closest?.(".rte-media-width-custom")) return;
+              applyCustomMediaWidth();
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                applyCustomMediaWidth();
+              }
+            }}
+          />
+          <select
+            className="rte-media-width-unit"
+            value={mediaWidthUnit}
+            onChange={(e) => handleUnitChange(e.target.value)}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <option value="%">%</option>
+            <option value="px">px</option>
+          </select>
+          <button
+            type="button"
+            className="rte-media-width-apply"
+            title="Apply size"
+            onClick={applyCustomMediaWidth}
+          >
+            ✓
+          </button>
+        </div>
         <span className="rte-media-toolbar-divider" />
         <button type="button" onClick={removeMedia} className="danger" title="Remove">×</button>
       </div>
@@ -2105,7 +2683,7 @@ export default function RichTextEditor({
             </select>
 
             {/* Text Color */}
-            <label title="Font Color" className="rte-color-picker-label">
+            <label title="Text Color" className="rte-color-picker-label">
               <FaFont size={14} style={{ color: fontColor }} />
               <input
                 type="color"
@@ -2113,14 +2691,61 @@ export default function RichTextEditor({
                 onMouseDown={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
+                  saveSelection();
                 }}
                 onChange={(e) => {
                   e.stopPropagation();
-                  handleColorChange(e.target.value);
+                  applyTextColor(e.target.value);
                 }}
                 className="rte-color-input"
               />
             </label>
+
+            {/* Background Color */}
+            <label
+              title={areaHighlightMode ? "Highlight color for area selection" : "Text background color"}
+              className="rte-color-picker-label rte-bg-color-picker-label"
+            >
+              <span
+                className="rte-bg-color-swatch"
+                style={{ backgroundColor: bgColor, color: fontColor }}
+              >
+                A
+              </span>
+              <input
+                type="color"
+                value={bgColor}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (!areaHighlightMode) saveSelection();
+                }}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  const color = e.target.value;
+                  setBgColor(color);
+                  if (!areaHighlightMode) {
+                    applyBackgroundColor(color);
+                  }
+                }}
+                className="rte-color-input"
+              />
+            </label>
+
+            <button
+              type="button"
+              title="Area highlight — drag to select a box (like screenshot)"
+              className={`rte-toolbar-button rte-area-highlight-toggle${areaHighlightMode ? " active" : ""}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setAreaHighlightMode((prev) => !prev);
+                setMarqueePreview(null);
+                areaDragRef.current = null;
+                focus();
+              }}
+            >
+              <span className="rte-area-highlight-icon" aria-hidden="true" />
+            </button>
 
             <div style={{ width: '1px', height: '20px', backgroundColor: '#e5e7eb', margin: '0 4px' }}></div>
 
@@ -2347,7 +2972,30 @@ export default function RichTextEditor({
           </div>
           )}
         {/* Editor Content Area */}
-        <div className="rte-content-wrapper" style={{ position: 'relative' }}>
+        <div
+          ref={contentWrapperRef}
+          className={`rte-content-wrapper${areaHighlightMode ? " rte-area-highlight-mode" : ""}`}
+          style={{ position: 'relative' }}
+          onMouseDown={handleAreaSelectMouseDown}
+        >
+          {areaHighlightMode && (
+            <div className="rte-area-highlight-hint" aria-hidden="true">
+              Drag to select an area, then release to apply highlight
+            </div>
+          )}
+          {marqueePreview && (
+            <div
+              className="rte-marquee-preview"
+              style={{
+                left: marqueePreview.left,
+                top: marqueePreview.top,
+                width: marqueePreview.width,
+                height: marqueePreview.height,
+                backgroundColor: `${bgColor}55`,
+                borderColor: bgColor,
+              }}
+            />
+          )}
           <div
             ref={editorRef}
             contentEditable={editable && disabled !== true}
@@ -2361,6 +3009,11 @@ export default function RichTextEditor({
             onDragStart={(e) => e.preventDefault()}
             onDragOver={(e) => e.preventDefault()}
             onKeyDown={handleKeyDown}
+            onKeyUp={handleKeyUp}
+            onMouseUp={() => {
+              saveSelection();
+              setSelectionVersion((v) => v + 1);
+            }}
             onClick={handleEditorClick}
             onFocus={handleEditorFocus}
             onBlur={handleEditorBlur}
@@ -2380,8 +3033,8 @@ export default function RichTextEditor({
               {placeholder}
             </div>
           )}
+          {renderMediaToolbar()}
         </div>
-        {renderMediaToolbar()}
 
         
         {/* Footer with Character/Word Count */}

@@ -9,7 +9,7 @@ function App() {
     <div className="App">
       <div className="container">
         <h1>Rich Text Editor Example</h1>
-        <p className="subtitle">Dependency-Free Industry Standard Editor</p>
+        <p className="subtitle">Dependency-Free Industry Standard Editor — click an image to resize (% or px)</p>
         
         <div className="editor-wrapper">
           <RichTextEditor 
