@@ -2013,12 +2013,9 @@ export default function RichTextEditor({
             <button
               type="button"
               title="Bold"
-              onClick={(e) => {
+              onMouseDown={(e) => {
                 e.preventDefault();
-                e.stopPropagation();
-                document.execCommand("bold");
-                handleInput();
-                focus();
+                exec("bold");
               }}
               className={`rte-toolbar-button ${isBold ? "active" : ""}`}
             >
@@ -2029,12 +2026,9 @@ export default function RichTextEditor({
             <button
               type="button"
               title="Italic"
-              onClick={(e) => {
+              onMouseDown={(e) => {
                 e.preventDefault();
-                e.stopPropagation();
-                document.execCommand("italic");
-                handleInput();
-                focus();
+                exec("italic");
               }}
               className={`rte-toolbar-button ${isItalic ? "active" : ""}`}
             >
@@ -2045,12 +2039,9 @@ export default function RichTextEditor({
             <button
               type="button"
               title="Underline"
-              onClick={(e) => {
+              onMouseDown={(e) => {
                 e.preventDefault();
-                e.stopPropagation();
-                document.execCommand("underline");
-                handleInput();
-                focus();
+                exec("underline");
               }}
               className={`rte-toolbar-button ${isUnderline ? "active" : ""}`}
             >
