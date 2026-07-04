@@ -1,48 +1,41 @@
-# React Lite Rich Text Editor
+# react-lite-rich-text-editor
 
-A **premium, zero-dependency**, and industry-standard rich text editor for React.
+A **premium, zero-dependency** rich text editor for React — tables, image resize, video embeds, markdown shortcuts, and clean HTML output.
 
 <div align="center">
-  <a href="https://elangodev.com/npm">
-    <img src="https://img.shields.io/badge/TRY%20IT-LIVE%20DEMO-blueviolet?style=for-the-badge&logo=rocket" alt="Try it out" />
-  </a>
-  <a href="https://www.npmjs.com/package/react-lite-rich-text-editor">
-    <img src="https://img.shields.io/npm/v/react-lite-rich-text-editor?style=for-the-badge" alt="NPM Version" />
-  </a>
+
+[![Live Demo](https://img.shields.io/badge/TRY%20IT-LIVE%20DEMO-blueviolet?style=for-the-badge&logo=rocket)](https://elangodev.com/npm)
+[![npm version](https://img.shields.io/npm/v/react-lite-rich-text-editor?style=for-the-badge)](https://www.npmjs.com/package/react-lite-rich-text-editor)
+[![npm downloads](https://img.shields.io/npm/dm/react-lite-rich-text-editor?style=for-the-badge)](https://www.npmjs.com/package/react-lite-rich-text-editor)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
+
+**[Live Demo](https://elangodev.com/npm)** · **[npm](https://www.npmjs.com/package/react-lite-rich-text-editor)** · **[GitHub](https://github.com/Elango-P/rich-text-editor)**
+
 </div>
 
 ---
 
-## Try it Out
+## Why this editor?
 
-- **Live Demo**: [Industrial Rich Text Editor Demo](https://elangodev.com/npm)
-- **Local Preview**: Clone this repo and run `npm install && npm run dev` inside the `example/` folder.
+Most React editors pull in Quill, Draft.js, or TipTap and a pile of plugins. This one does not.
 
----
+| | react-lite-rich-text-editor |
+| :--- | :--- |
+| Runtime dependencies | **Zero** (native browser APIs) |
+| API surface | One controlled component |
+| Output | Clean HTML |
+| Tables / images / video | Built in |
+| Markdown shortcuts | Built in |
 
-## Features
+Perfect for bios, CMS fields, comments, and notes where you want a real toolbar without a framework inside your framework.
 
--   ✨ **Zero-Dependency Core**: Built entirely with native Browser APIs for maximum performance and stability.
--   📊 **Advanced Tables**: Insert tables, add/delete rows/columns, and merge cells with intuitive toolbar controls.
--   🎥 **Universal Video Embedding**: Seamlessly embed videos from **YouTube, Vimeo, DailyMotion**, and more.
--   📏 **Image Resizing**: Interactive 4-handle resizing system for uploaded images.
--   🧮 **Content Metrics**: Stealthy, professional footer showing real-time **Word and Character counts**.
--   📝 **Rich Formatting**: Bold, italic, underline, font sizes, colors, alignment, and lists.
--   📑 **Heading Styles**: Built-in dropdown for Paragraph, Heading 1, Heading 2, Heading 3, and Quote.
--   🧹 **Clear Formatting**: One-click button to remove styles, links, and reset text to a clean paragraph.
--   ⚡ **Markdown Shortcuts**: Type `#`, `##`, `###`, `>`, `-`, `*`, or `1.` then press Space to format instantly.
--   💬 **Placeholder Support**: Show helpful hint text when the editor is empty.
--   🔗 **Smart Links**: Automatic protocol handling and new window navigation.
--   🎨 **Premium UI**: Modern, glassmorphism-inspired design with a polished Look & Feel.
--   ♿ **Accessible**: Editable region includes `role="textbox"` and `aria-label` support.
-
-## Installation
+## Install
 
 ```bash
 npm install react-lite-rich-text-editor
 ```
 
-## Basic Usage
+## Quick start
 
 ```jsx
 import React, { useState } from 'react';
@@ -52,23 +45,40 @@ function App() {
   const [content, setContent] = useState('');
 
   return (
-    <div className="p-8">
-      <RichTextEditor
-        label="Biography"
-        value={content}
-        onChange={(value) => setContent(value)}
-        placeholder="Tell us your story..."
-      />
-    </div>
+    <RichTextEditor
+      label="Biography"
+      value={content}
+      onChange={(value) => setContent(value)}
+      placeholder="Tell us your story..."
+    />
   );
 }
 ```
 
-## Text Styles
+## Try it out
 
-Use the **Paragraph / Heading / Quote** dropdown in the toolbar to change block formatting:
+- **Live demo**: [elangodev.com/npm](https://elangodev.com/npm) — interactive playground with sample content
+- **Local preview**: clone this repo, then run `npm install && npm run dev` inside `example/`
 
-| Style | Toolbar Option |
+## Features
+
+- **Zero-dependency core** — native browser APIs for performance and stability
+- **Advanced tables** — insert tables, add/delete rows and columns, merge cells
+- **Universal video embedding** — YouTube, Vimeo, DailyMotion, and more
+- **Image resizing** — interactive 4-handle resize for uploaded images
+- **Content metrics** — live word and character counts in the footer
+- **Rich formatting** — bold, italic, underline, font sizes, colors, alignment, lists
+- **Heading styles** — Paragraph, H1–H3, and Quote from the toolbar
+- **Clear formatting** — one click to strip styles, links, and reset to a paragraph
+- **Markdown shortcuts** — `#`, `##`, `###`, `>`, `-`, `*`, or `1.` then Space
+- **Placeholder support** — hint text when the editor is empty
+- **Smart links** — automatic protocol handling and new-window navigation
+- **Premium UI** — modern, glassmorphism-inspired design
+- **Accessible** — `role="textbox"` and `aria-label` on the editable region
+
+## Text styles
+
+| Style | Toolbar option |
 | :--- | :--- |
 | Normal text | Paragraph |
 | Large title | Heading 1 |
@@ -76,11 +86,11 @@ Use the **Paragraph / Heading / Quote** dropdown in the toolbar to change block 
 | Subsection title | Heading 3 |
 | Quoted text | Quote |
 
-Use the **Tx** button to clear formatting from the current selection — removes bold, italic, underline, colors, links, and resets the block to a paragraph.
+Use the **Tx** button to clear formatting from the current selection.
 
-## Markdown Shortcuts
+## Markdown shortcuts
 
-Type these at the start of a line, then press **Space** to convert instantly:
+Type these at the start of a line, then press **Space**:
 
 | Shortcut | Result |
 | :--- | :--- |
@@ -91,9 +101,9 @@ Type these at the start of a line, then press **Space** to convert instantly:
 | `-` or `*` + Space | Bullet list |
 | `1.` + Space | Numbered list |
 
-**Example:** Type `## My Title` and press Space — it becomes a Heading 2.
+**Example:** type `## My Title` and press Space — it becomes a Heading 2.
 
-## Keyboard Shortcuts
+## Keyboard shortcuts
 
 | Shortcut | Action |
 | :--- | :--- |
@@ -109,24 +119,22 @@ Type these at the start of a line, then press **Space** to convert instantly:
 | :--- | :--- | :--- | :--- |
 | `label` | `string` | `""` | Label displayed above the editor. |
 | `value` | `string` | `""` | The HTML content of the editor. |
-| `onChange` | `function` | `undefined` | Callback function triggered on content change. |
-| `placeholder` | `string` | `"Type here..."` | Placeholder text when empty. |
-| `editable` | `boolean` | `true` | Whether the editor is editable. Set to `false` for a read-only viewer. |
+| `onChange` | `function` | `undefined` | Callback on content change. |
+| `placeholder` | `string` | `"Type here..."` | Placeholder when empty. |
+| `editable` | `boolean` | `true` | Set `false` for a read-only viewer. |
 | `disabled` | `boolean` | `false` | Disables the editor and hides the toolbar. |
-| `showBorder` | `boolean` | `true` | Controls the visibility of the editor's border and shadow. |
-| `minHeight` | `string \| number` | `"150px"` | Minimum height of the editor content area. |
-| `maxHeight` | `string \| number` | `"500px"` | Maximum height of the editor content area. |
-| `onImageUpload` | `function` | `undefined` | Custom handler for image uploads. Should return a `Promise<string>` URL. |
+| `showBorder` | `boolean` | `true` | Controls border and shadow visibility. |
+| `minHeight` | `string \| number` | `"150px"` | Minimum height of the content area. |
+| `maxHeight` | `string \| number` | `"500px"` | Maximum height of the content area. |
+| `onImageUpload` | `function` | `undefined` | Custom image upload handler; return `Promise<string>` URL. |
 
-## Development & Build
-
-To build the project for production:
+## Development
 
 ```bash
 npm run build
 ```
 
-The output will be generated in the `dist/` directory.
+Output is written to `dist/`.
 
 ## License
 

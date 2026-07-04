@@ -1,8 +1,8 @@
 {
   "name": "react-lite-rich-text-editor",
-  "version": "1.1.10",
+  "version": "1.1.11",
   "type": "module",
-  "description": "A React rich text editor with formatting, image upload, and link support",
+  "description": "Premium zero-dependency React rich text editor with tables, image resize, video embeds, markdown shortcuts, and clean HTML output",
   "main": "dist/index.cjs.js",
   "module": "dist/index.esm.js",
   "types": "dist/index.d.ts",
@@ -64,5 +64,5 @@
   "directories": {
     "example": "example"
   },
-  "license": "ISC"
+  "license": "MIT"
 }
