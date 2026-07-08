@@ -5,7 +5,7 @@ import './App.css'
 const DEMO_CONTENT = `
 <h1>Write something worth reading</h1>
 <p>This is a <strong>zero-dependency</strong> React rich text editor — no Quill, no Draft.js, no TipTap. Just a polished toolbar and clean HTML output.</p>
-<blockquote>Try the toolbar, markdown shortcuts, tables, images, and video embeds. Everything below is editable.</blockquote>
+<blockquote>Try the toolbar, type <code>/</code> for slash commands, markdown shortcuts, tables, images, and video embeds. Everything below is editable.</blockquote>
 <h2>What you can do</h2>
 <ul>
   <li><strong>Format text</strong> — bold, italic, underline, colors, and alignment</li>
@@ -28,6 +28,14 @@ const DEMO_CONTENT = `
 
 const FEATURES = [
   {
+    title: 'Undo & redo',
+    description: 'Full edit history with toolbar buttons plus Ctrl+Z / Ctrl+Shift+Z — expected in any modern editor.',
+  },
+  {
+    title: 'Slash commands',
+    description: 'Type / for a Notion-style menu — headings, lists, tables, images, video, links, and dividers.',
+  },
+  {
     title: 'Zero dependencies',
     description: 'Built on native browser APIs. No Quill, Draft.js, or TipTap — smaller installs and fewer surprises.',
   },
@@ -41,7 +49,7 @@ const FEATURES = [
   },
   {
     title: 'Premium UI',
-    description: 'Glassmorphism-inspired toolbar, content metrics, placeholders, and accessible textbox roles.',
+    description: 'Glassmorphism-inspired toolbar, strikethrough, content metrics, placeholders, and accessible textbox roles.',
   },
 ]
 

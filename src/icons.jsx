@@ -120,3 +120,21 @@ export const FaVideo = ({ className, size, color, style }) => {
     <span className={className} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: size || '1em', color: color || 'inherit', ...style }} dangerouslySetInnerHTML={{ __html: '<svg stroke=\"currentColor\" fill=\"currentColor\" stroke-width=\"0\" viewBox=\"0 0 576 512\" height=\"1em\" width=\"1em\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0 128C0 92.7 28.7 64 64 64H320c35.3 0 64 28.7 64 64V384c0 35.3-28.7 64-64 64H64c-35.3 0-64-28.7-64-64V128zM559.1 99.8c10.4 5.6 16.9 16.3 16.9 28.2V384c0 11.9-6.5 22.6-16.9 28.2s-23 5-32.9-1.6l-96-64L416 337.1V174.9l14.2-9.5 96-64c9.9-6.6 22.6-7.1 32.9-1.6z\"></path></svg>' }} />
   );
 };
+
+export const FaUndo = ({ className, size, color, style }) => {
+  return (
+    <span className={className} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: size || '1em', color: color || 'inherit', ...style }} dangerouslySetInnerHTML={{ __html: `<svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 512 512" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M212.333 224.667H82.667c-47.197 0-57.243 72.667-10.667 72.667h139.733L163.313 366.24c-12.255 12.255-3.686 33.194 13.732 33.194H400a32 32 0 0 0 32-32V253.893a32 32 0 0 0-9.882-23.112L307.198 128.198a32 32 0 0 0-45.255 0l-49.61 49.61z"></path></svg>` }} />
+  );
+};
+
+export const FaRedo = ({ className, size, color, style }) => {
+  return (
+    <span className={className} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: size || '1em', color: color || 'inherit', ...style }} dangerouslySetInnerHTML={{ __html: `<svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 512 512" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M299.667 224.667h129.666c47.197 0 57.243 72.667 10.667 72.667H300.267l48.387 48.907c12.255 12.255 3.686 33.194-13.732 33.194H112a32 32 0 0 1-32-32V253.893a32 32 0 0 1 9.882-23.112L204.802 128.198a32 32 0 0 1 45.255 0l49.61 49.61z"></path></svg>` }} />
+  );
+};
+
+export const FaStrikethrough = ({ className, size, color, style }) => {
+  return (
+    <span className={className} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: size || '1em', color: color || 'inherit', ...style }} dangerouslySetInnerHTML={{ __html: `<svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 512 512" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M496 288H16c-8.8 0-16 7.2-16 16v32c0 8.8 7.2 16 16 16h480c8.8 0 16-7.2 16-16v-32c0-8.8-7.2-16-16-16zM256 160c70.7 0 128 28.7 128 64s-57.3 64-128 64H48c-8.8 0-16 7.2-16 16v32c0 8.8 7.2 16 16 16h368c70.7 0 128-28.7 128-64s-57.3-64-128-64H256z"></path></svg>` }} />
+  );
+};

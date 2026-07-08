@@ -329,6 +329,12 @@
   border-radius: 0 8px 8px 0;
 }
 
+.rte-content hr {
+  border: none;
+  border-top: 1px solid #e5e7eb;
+  margin: 16px 0;
+}
+
 .rte-content img {
   max-width: 100%;
   height: auto;
@@ -348,6 +354,14 @@
   padding: 12px;
   min-width: 40px;
   word-break: break-word;
+  font-size: 16px;
+  line-height: 1.6;
+  text-align: left;
+  vertical-align: top;
+}
+
+.rte-content td {
+  font-weight: 400;
 }
 
 /* Video Containers */
@@ -771,4 +785,78 @@
 .rte-footer-item b {
   color: #6b7280;
   font-weight: 600;
+}
+
+/* Slash Command Menu */
+.rte-slash-menu {
+  position: absolute;
+  z-index: 50;
+  min-width: 220px;
+  max-width: 280px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.08);
+  padding: 6px;
+  animation: rte-fade-in 0.12s ease-out;
+}
+
+.rte-slash-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+  color: #374151;
+  transition: background-color 0.1s ease;
+}
+
+.rte-slash-menu-item:hover,
+.rte-slash-menu-item.active {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+}
+
+.rte-slash-menu-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: #f3f4f6;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.rte-slash-menu-item.active .rte-slash-menu-icon,
+.rte-slash-menu-item:hover .rte-slash-menu-icon {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.rte-slash-menu-label {
+  font-weight: 500;
+}
+
+.rte-slash-menu-hint {
+  font-size: 11px;
+  color: #9ca3af;
+  padding: 4px 10px 2px;
+  user-select: none;
+}
+
+.rte-toolbar-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }

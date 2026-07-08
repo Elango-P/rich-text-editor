@@ -62,6 +62,9 @@ function App() {
 
 ## Features
 
+- **Undo / redo** — full history stack with toolbar buttons and keyboard shortcuts
+- **Slash commands** — type `/` for a Notion-style command menu (headings, lists, media, divider)
+- **Strikethrough** — toolbar button plus `Ctrl/Cmd + Shift + X`
 - **Zero-dependency core** — native browser APIs for performance and stability
 - **Advanced tables** — insert tables, add/delete rows and columns, merge cells
 - **Universal video embedding** — YouTube, Vimeo, DailyMotion, and more
@@ -103,6 +106,24 @@ Type these at the start of a line, then press **Space**:
 
 **Example:** type `## My Title` and press Space — it becomes a Heading 2.
 
+## Slash commands
+
+Type `/` at the start of a line (or after a space) to open the command menu:
+
+| Command | Result |
+| :--- | :--- |
+| `/h1`, `/heading` | Heading 1 |
+| `/h2` | Heading 2 |
+| `/quote` | Block quote |
+| `/bullet` | Bullet list |
+| `/table` | Insert table |
+| `/image` | Upload image |
+| `/video` | Embed video |
+| `/link` | Insert link |
+| `/divider` | Horizontal rule |
+
+Use **↑↓** to navigate, **Enter** to insert, **Esc** to close.
+
 ## Keyboard shortcuts
 
 | Shortcut | Action |
@@ -110,6 +131,10 @@ Type these at the start of a line, then press **Space**:
 | `Ctrl/Cmd + B` | Bold |
 | `Ctrl/Cmd + I` | Italic |
 | `Ctrl/Cmd + U` | Underline |
+| `Ctrl/Cmd + Shift + X` | Strikethrough |
+| `Ctrl/Cmd + Z` | Undo |
+| `Ctrl/Cmd + Shift + Z` or `Ctrl/Cmd + Y` | Redo |
+| `/` | Open slash command menu |
 | `Enter` | New paragraph or list item |
 | `Escape` | Close image zoom modal |
 

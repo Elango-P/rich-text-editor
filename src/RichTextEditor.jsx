@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { FaImage, FaBold, FaItalic, FaUnderline, FaTextHeight, FaAlignCenter, FaAlignRight, FaAlignJustify, FaAlignLeft, FaListOl, FaListUl, FaFont, FaLink, FaTable, FaYoutube, FaVideo, FaTrash, FaObjectGroup } from "./icons";
+import { FaImage, FaBold, FaItalic, FaUnderline, FaStrikethrough, FaTextHeight, FaAlignCenter, FaAlignRight, FaAlignJustify, FaAlignLeft, FaListOl, FaListUl, FaFont, FaLink, FaTable, FaYoutube, FaVideo, FaTrash, FaObjectGroup, FaUndo, FaRedo } from "./icons";
 import { draftBlocksToHTML, isValidDraftFormat } from "./utils";
 import Spinner from "./Spinner";
 import LabelComponent from "./Label";
@@ -284,6 +284,34 @@ const insertAreaHighlightRegion = (editor, clientRect, color) => {
   return true;
 };
 
+const HISTORY_MAX = 50;
+const HISTORY_DEBOUNCE_MS = 300;
+
+const SLASH_COMMANDS = [
+  { id: "h1", label: "Heading 1", icon: "H1", keywords: ["h1", "heading", "title"] },
+  { id: "h2", label: "Heading 2", icon: "H2", keywords: ["h2", "heading", "subtitle"] },
+  { id: "h3", label: "Heading 3", icon: "H3", keywords: ["h3", "heading"] },
+  { id: "quote", label: "Quote", icon: "❝", keywords: ["quote", "blockquote"] },
+  { id: "bullet", label: "Bullet list", icon: "•", keywords: ["bullet", "ul", "list"] },
+  { id: "numbered", label: "Numbered list", icon: "1.", keywords: ["numbered", "ol", "list"] },
+  { id: "table", label: "Table", icon: "⊞", keywords: ["table", "grid"] },
+  { id: "image", label: "Image", icon: "🖼", keywords: ["image", "photo", "picture"] },
+  { id: "video", label: "Video", icon: "▶", keywords: ["video", "youtube", "embed"] },
+  { id: "link", label: "Link", icon: "🔗", keywords: ["link", "url", "href"] },
+  { id: "divider", label: "Divider", icon: "—", keywords: ["divider", "hr", "line", "rule"] },
+];
+
+const filterSlashCommands = (query) => {
+  const q = query.trim().toLowerCase();
+  if (!q) return SLASH_COMMANDS;
+  return SLASH_COMMANDS.filter(
+    (cmd) =>
+      cmd.label.toLowerCase().includes(q) ||
+      cmd.id.includes(q) ||
+      cmd.keywords.some((kw) => kw.includes(q) || q.includes(kw))
+  );
+};
+
 const getClientRectFromDrag = (startX, startY, currentX, currentY) => {
   const left = Math.min(startX, currentX);
   const top = Math.min(startY, currentY);
@@ -346,6 +374,13 @@ export default function RichTextEditor({
   const [isBold, setIsBold] = useState(false);
   const [isItalic, setIsItalic] = useState(false);
   const [isUnderline, setIsUnderline] = useState(false);
+  const [isStrikethrough, setIsStrikethrough] = useState(false);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+  const [slashMenu, setSlashMenu] = useState(null);
+  const historyRef = useRef({ stack: [], index: -1, isRestoring: false, timer: null });
+  const slashMenuRef = useRef(null);
+  const slashExecuteRef = useRef(() => {});
 
   // NEW: Track current font size
   const [currentFontSize, setCurrentFontSize] = useState("16");
@@ -509,7 +544,18 @@ export default function RichTextEditor({
           if (editorRef.current && editorRef.current.innerHTML !== newContent) {
             editorRef.current.innerHTML = newContent;
           }
-          requestAnimationFrame(() => syncProcessedMediaRef.current(editorRef.current));
+          requestAnimationFrame(() => {
+            syncProcessedMediaRef.current(editorRef.current);
+            if (historyRef.current.stack.length === 0 && editorRef.current) {
+              const initial = getCleanHtml();
+              if (initial) {
+                historyRef.current.stack = [initial];
+                historyRef.current.index = 0;
+                setCanUndo(false);
+                setCanRedo(false);
+              }
+            }
+          });
           updateMetrics();
         }
       } catch (e) {
@@ -518,6 +564,9 @@ export default function RichTextEditor({
     } else if (!value && html) {
       setHtml('');
       lastSynchronizedHtmlRef.current = "";
+      historyRef.current = { stack: [], index: -1, isRestoring: false, timer: null };
+      setCanUndo(false);
+      setCanRedo(false);
       if (editorRef.current) {
         editorRef.current.innerHTML = '';
         updateMetrics();
@@ -585,13 +634,92 @@ export default function RichTextEditor({
     return clone.innerHTML;
   };
 
+  const updateHistoryButtons = useCallback(() => {
+    const { stack, index } = historyRef.current;
+    setCanUndo(index > 0);
+    setCanRedo(index >= 0 && index < stack.length - 1);
+  }, []);
+
+  const pushHistory = useCallback(
+    (html, immediate = false) => {
+      if (historyRef.current.isRestoring || !html) return;
+
+      const doPush = () => {
+        const { stack, index } = historyRef.current;
+        const newStack = stack.slice(0, index + 1);
+        if (newStack[newStack.length - 1] === html) return;
+        newStack.push(html);
+        if (newStack.length > HISTORY_MAX) newStack.shift();
+        historyRef.current.stack = newStack;
+        historyRef.current.index = newStack.length - 1;
+        updateHistoryButtons();
+      };
+
+      if (immediate) {
+        if (historyRef.current.timer) {
+          clearTimeout(historyRef.current.timer);
+          historyRef.current.timer = null;
+        }
+        doPush();
+        return;
+      }
+
+      if (historyRef.current.timer) clearTimeout(historyRef.current.timer);
+      historyRef.current.timer = setTimeout(() => {
+        doPush();
+        historyRef.current.timer = null;
+      }, HISTORY_DEBOUNCE_MS);
+    },
+    [updateHistoryButtons]
+  );
+
+  const ensureHistoryInit = useCallback(
+    (html) => {
+      if (!html || historyRef.current.stack.length > 0) return;
+      historyRef.current.stack = [html];
+      historyRef.current.index = 0;
+      updateHistoryButtons();
+    },
+    [updateHistoryButtons]
+  );
+
+  const restoreHistory = useCallback(
+    (newIndex) => {
+      const { stack } = historyRef.current;
+      if (newIndex < 0 || newIndex >= stack.length || !editorRef.current) return;
+
+      historyRef.current.isRestoring = true;
+      const html = stack[newIndex];
+      editorRef.current.innerHTML = html;
+      processExistingMedia(editorRef.current);
+      lastSynchronizedHtmlRef.current = html;
+      setHtml(html);
+      onChange && onChange(html);
+      updateMetrics();
+      historyRef.current.index = newIndex;
+      historyRef.current.isRestoring = false;
+      updateHistoryButtons();
+      setSlashMenu(null);
+    },
+    [onChange, updateMetrics, updateHistoryButtons]
+  );
+
+  const undo = useCallback(() => {
+    restoreHistory(historyRef.current.index - 1);
+  }, [restoreHistory]);
+
+  const redo = useCallback(() => {
+    restoreHistory(historyRef.current.index + 1);
+  }, [restoreHistory]);
+
   // Trigger change manually
   const triggerChange = useCallback(() => {
     const next = getCleanHtml();
     setHtml(next);
     lastSynchronizedHtmlRef.current = next;
     onChange && onChange(next);
-  }, [onChange]);
+    pushHistory(next, true);
+  }, [onChange, pushHistory]);
 
   syncProcessedMediaRef.current = (container) => {
     if (processExistingMedia(container)) {
@@ -644,6 +772,11 @@ export default function RichTextEditor({
         if (
           tagNames.includes("underline") &&
           style.textDecoration.includes("underline")
+        )
+          return true;
+        if (
+          tagNames.includes("strikethrough") &&
+          style.textDecoration.includes("line-through")
         )
           return true;
 
@@ -1026,6 +1159,7 @@ export default function RichTextEditor({
     requestAnimationFrame(() => {
       if (!editorRef.current?.contains(document.activeElement)) {
         setEditorFocused(false);
+        setSlashMenu(null);
       }
     });
   };
@@ -1106,6 +1240,7 @@ export default function RichTextEditor({
         setIsBold(isParentStyle(container, "B", "STRONG", "bold"));
         setIsItalic(isParentStyle(container, "I", "EM", "italic"));
         setIsUnderline(isParentStyle(container, "U", "underline"));
+        setIsStrikethrough(isParentStyle(container, "S", "STRIKE", "DEL", "strikethrough"));
         const computedColor = window.getComputedStyle(container).color;
         setFontColor(rgbToHex(computedColor));
         syncBackgroundColorState();
@@ -1113,6 +1248,7 @@ export default function RichTextEditor({
         setIsBold(document.queryCommandState("bold"));
         setIsItalic(document.queryCommandState("italic"));
         setIsUnderline(document.queryCommandState("underline"));
+        setIsStrikethrough(document.queryCommandState("strikeThrough"));
         const computedColor = window.getComputedStyle(container).color;
         setFontColor(rgbToHex(computedColor));
         syncBackgroundColorState();
@@ -1450,6 +1586,11 @@ export default function RichTextEditor({
           const newCell = newRowAbove.insertCell(i);
           newCell.style.border = "1px solid #e5e7eb";
           newCell.style.padding = "12px";
+          newCell.style.fontSize = "16px";
+          newCell.style.fontWeight = "400";
+          newCell.style.lineHeight = "1.6";
+          newCell.style.textAlign = "left";
+          newCell.style.verticalAlign = "top";
           newCell.innerHTML = "&nbsp;";
         }
         break;
@@ -1459,6 +1600,11 @@ export default function RichTextEditor({
           const newCell = newRowBelow.insertCell(i);
           newCell.style.border = "1px solid #e5e7eb";
           newCell.style.padding = "12px";
+          newCell.style.fontSize = "16px";
+          newCell.style.fontWeight = "400";
+          newCell.style.lineHeight = "1.6";
+          newCell.style.textAlign = "left";
+          newCell.style.verticalAlign = "top";
           newCell.innerHTML = "&nbsp;";
         }
         break;
@@ -1468,6 +1614,11 @@ export default function RichTextEditor({
           const newCell = table.rows[i].insertCell(cellIndex);
           newCell.style.border = "1px solid #e5e7eb";
           newCell.style.padding = "12px";
+          newCell.style.fontSize = "16px";
+          newCell.style.fontWeight = "400";
+          newCell.style.lineHeight = "1.6";
+          newCell.style.textAlign = "left";
+          newCell.style.verticalAlign = "top";
           newCell.innerHTML = "&nbsp;";
         }
         break;
@@ -1477,6 +1628,11 @@ export default function RichTextEditor({
           const newCell = table.rows[i].insertCell(cellIndexAfter);
           newCell.style.border = "1px solid #e5e7eb";
           newCell.style.padding = "12px";
+          newCell.style.fontSize = "16px";
+          newCell.style.fontWeight = "400";
+          newCell.style.lineHeight = "1.6";
+          newCell.style.textAlign = "left";
+          newCell.style.verticalAlign = "top";
           newCell.innerHTML = "&nbsp;";
         }
         break;
@@ -1546,7 +1702,7 @@ export default function RichTextEditor({
     for (let i = 0; i < rows; i++) {
       tableHtml += '<tr>';
       for (let j = 0; j < cols; j++) {
-        tableHtml += '<td style="border: 1px solid #e5e7eb; padding: 12px; min-height: 20px;">&nbsp;</td>';
+        tableHtml += '<td style="border: 1px solid #e5e7eb; padding: 12px; min-height: 20px; font-size: 16px; font-weight: 400; line-height: 1.6; text-align: left; vertical-align: top;">&nbsp;</td>';
       }
       tableHtml += '</tr>';
     }
@@ -2053,6 +2209,11 @@ export default function RichTextEditor({
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === "Escape") {
+      if (slashMenuRef.current) {
+        e.preventDefault();
+        setSlashMenu(null);
+        return;
+      }
       if (areaHighlightMode) {
         e.preventDefault();
         areaDragRef.current = null;
@@ -2080,6 +2241,51 @@ export default function RichTextEditor({
     }
 
     if (applyMarkdownShortcut(e)) return;
+
+    const currentSlashMenu = slashMenuRef.current;
+    if (currentSlashMenu) {
+      const filtered = filterSlashCommands(currentSlashMenu.query);
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlashMenu((prev) =>
+          prev
+            ? {
+                ...prev,
+                activeIndex: Math.min(prev.activeIndex + 1, Math.max(0, filtered.length - 1)),
+              }
+            : null
+        );
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashMenu((prev) =>
+          prev ? { ...prev, activeIndex: Math.max(prev.activeIndex - 1, 0) } : null
+        );
+        return;
+      }
+      if (e.key === "Enter" && filtered.length > 0) {
+        e.preventDefault();
+        slashExecuteRef.current(filtered[currentSlashMenu.activeIndex]?.id);
+        return;
+      }
+      if (e.key === "Tab" && filtered.length > 0) {
+        e.preventDefault();
+        slashExecuteRef.current(filtered[currentSlashMenu.activeIndex]?.id);
+        return;
+      }
+    }
+
+    if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
+      e.preventDefault();
+      undo();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && (e.key === "y" || (e.key === "z" && e.shiftKey) || (e.key === "Z" && e.shiftKey))) {
+      e.preventDefault();
+      redo();
+      return;
+    }
 
     // Handle Enter key
     if (e.key === 'Enter') {
@@ -2227,8 +2433,11 @@ export default function RichTextEditor({
     } else if ((e.ctrlKey || e.metaKey) && e.key === "u") {
       e.preventDefault();
       exec("underline");
+    } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "x") {
+      e.preventDefault();
+      exec("strikeThrough");
     }
-  }, [exec, triggerChange, fontColor, areaHighlightMode, selectedMedia]);
+  }, [exec, triggerChange, fontColor, areaHighlightMode, selectedMedia, undo, redo]);
 
   const confirmLink = () => {
     // Add protocol if missing
@@ -2282,6 +2491,134 @@ export default function RichTextEditor({
     removeBackgroundColor();
     focus();
   };
+
+  const insertDivider = () => {
+    document.execCommand(
+      "insertHTML",
+      false,
+      '<hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0;"><div><br></div>'
+    );
+    triggerChange();
+    focus();
+  };
+
+  const removeSlashQuery = () => {
+    const sel = window.getSelection();
+    if (!sel?.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    const block = getActiveBlock(range.startContainer);
+    if (!block) return;
+
+    const prefixRange = document.createRange();
+    prefixRange.setStart(block, 0);
+    prefixRange.setEnd(range.startContainer, range.startOffset);
+    const textBefore = prefixRange.toString().replace(/\u00A0/g, " ");
+    const match = textBefore.match(/(?:^|\s)(\/[^\s]*)$/);
+    if (!match) return;
+
+    const slashText = match[1];
+    const deleteRange = document.createRange();
+    deleteRange.setStart(range.startContainer, range.startOffset - slashText.length);
+    deleteRange.setEnd(range.startContainer, range.startOffset);
+    deleteRange.deleteContents();
+  };
+
+  const updateSlashMenu = useCallback(() => {
+    const sel = window.getSelection();
+    if (!sel?.rangeCount || !sel.isCollapsed || !editorRef.current || !contentWrapperRef.current) {
+      setSlashMenu(null);
+      return;
+    }
+
+    const range = sel.getRangeAt(0);
+    const block = getActiveBlock(range.startContainer);
+    if (!block) {
+      setSlashMenu(null);
+      return;
+    }
+
+    const prefixRange = document.createRange();
+    prefixRange.setStart(block, 0);
+    prefixRange.setEnd(range.startContainer, range.startOffset);
+    const textBefore = prefixRange.toString().replace(/\u00A0/g, " ");
+    const match = textBefore.match(/(?:^|\s)\/([^\s]*)$/);
+    if (!match) {
+      setSlashMenu(null);
+      return;
+    }
+
+    const query = match[1];
+    const rect = range.getBoundingClientRect();
+    const wrapperRect = contentWrapperRef.current.getBoundingClientRect();
+
+    setSlashMenu((prev) => ({
+      query,
+      top: rect.bottom - wrapperRect.top + 4,
+      left: Math.max(8, rect.left - wrapperRect.left),
+      activeIndex:
+        prev && prev.query === query
+          ? Math.min(prev.activeIndex, Math.max(0, filterSlashCommands(query).length - 1))
+          : 0,
+    }));
+  }, []);
+
+  const executeSlashCommand = useCallback(
+    (commandId) => {
+      removeSlashQuery();
+      setSlashMenu(null);
+
+      switch (commandId) {
+        case "h1":
+          applyBlockFormat("h1");
+          break;
+        case "h2":
+          applyBlockFormat("h2");
+          break;
+        case "h3":
+          applyBlockFormat("h3");
+          break;
+        case "quote":
+          applyBlockFormat("blockquote");
+          break;
+        case "bullet":
+          handleSelect("unordered");
+          break;
+        case "numbered":
+          handleSelect("ordered");
+          break;
+        case "table": {
+          const sel = window.getSelection();
+          if (sel?.rangeCount) {
+            selectionRangeRef.current = sel.getRangeAt(0).cloneRange();
+          }
+          setTableModalOpen(true);
+          break;
+        }
+        case "image":
+          if (!isUploading) fileInputRef.current?.click();
+          break;
+        case "video":
+          saveSelection();
+          setVideoModalOpen(true);
+          break;
+        case "link":
+          addLink();
+          break;
+        case "divider":
+          insertDivider();
+          break;
+        default:
+          break;
+      }
+    },
+    [isUploading]
+  );
+
+  useEffect(() => {
+    slashMenuRef.current = slashMenu;
+  }, [slashMenu]);
+
+  slashExecuteRef.current = executeSlashCommand;
 
   const deleteTextBeforeCursorInBlock = (block, range, selection) => {
     const prefixRange = document.createRange();
@@ -2521,8 +2858,11 @@ export default function RichTextEditor({
       lastSynchronizedHtmlRef.current = next;
       onChange && onChange(next);
       updateMetrics();
+      ensureHistoryInit(next);
+      pushHistory(next, false);
+      updateSlashMenu();
     }
-  }, [onChange, updateMetrics]);
+  }, [onChange, updateMetrics, ensureHistoryInit, pushHistory, updateSlashMenu]);
 
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
@@ -2821,6 +3161,8 @@ export default function RichTextEditor({
     return <Spinner />;
   }
 
+  const filteredSlashCommands = slashMenu ? filterSlashCommands(slashMenu.query) : [];
+
   return (
     <div className="rte-main-wrapper" style={{ width: '100%', position: 'relative' }}>
       {label && <LabelComponent>{label}</LabelComponent>}
@@ -2850,6 +3192,33 @@ export default function RichTextEditor({
         {/* Toolbar */}
           {!disabled && (
           <div className="rte-toolbar">
+            <button
+              type="button"
+              title="Undo (Ctrl+Z)"
+              className="rte-toolbar-button"
+              disabled={!canUndo}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                undo();
+              }}
+            >
+              <FaUndo size={14} />
+            </button>
+            <button
+              type="button"
+              title="Redo (Ctrl+Shift+Z)"
+              className="rte-toolbar-button"
+              disabled={!canRedo}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                redo();
+              }}
+            >
+              <FaRedo size={14} />
+            </button>
+
+            <div style={{ width: '1px', height: '20px', backgroundColor: '#e5e7eb', margin: '0 4px' }}></div>
+
             {/* Bold */}
             <button
               type="button"
@@ -2887,6 +3256,18 @@ export default function RichTextEditor({
               className={`rte-toolbar-button ${isUnderline ? "active" : ""}`}
             >
               <FaUnderline size={14} />
+            </button>
+
+            <button
+              type="button"
+              title="Strikethrough (Ctrl+Shift+X)"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                exec("strikeThrough");
+              }}
+              className={`rte-toolbar-button ${isStrikethrough ? "active" : ""}`}
+            >
+              <FaStrikethrough size={14} />
             </button>
 
             <div style={{ width: '1px', height: '20px', backgroundColor: '#e5e7eb', margin: '0 4px' }}></div>
@@ -3276,6 +3657,35 @@ export default function RichTextEditor({
                 borderColor: bgColor,
               }}
             />
+          )}
+          {slashMenu && filteredSlashCommands.length > 0 && (
+            <div
+              className="rte-slash-menu"
+              style={{ top: slashMenu.top, left: slashMenu.left }}
+              role="listbox"
+              aria-label="Slash commands"
+            >
+              <div className="rte-slash-menu-hint">Type to filter · ↑↓ navigate · Enter to insert</div>
+              {filteredSlashCommands.map((cmd, index) => (
+                <button
+                  key={cmd.id}
+                  type="button"
+                  role="option"
+                  aria-selected={index === slashMenu.activeIndex}
+                  className={`rte-slash-menu-item${index === slashMenu.activeIndex ? " active" : ""}`}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    executeSlashCommand(cmd.id);
+                  }}
+                  onMouseEnter={() =>
+                    setSlashMenu((prev) => (prev ? { ...prev, activeIndex: index } : null))
+                  }
+                >
+                  <span className="rte-slash-menu-icon">{cmd.icon}</span>
+                  <span className="rte-slash-menu-label">{cmd.label}</span>
+                </button>
+              ))}
+            </div>
           )}
           <div
             ref={editorRef}
