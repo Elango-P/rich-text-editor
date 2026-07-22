@@ -2474,10 +2474,12 @@ export default function RichTextEditor({
   };
 
   const applyBlockFormat = (format) => {
-    document.execCommand("formatBlock", false, format);
-    setCurrentBlockFormat(format);
-    triggerChange();
     focus();
+    restoreSavedSelection();
+    const tag = format.startsWith("<") ? format : `<${format}>`;
+    document.execCommand("formatBlock", false, tag);
+    setCurrentBlockFormat(format.replace(/[<>]/g, ""));
+    triggerChange();
   };
 
   const clearFormatting = () => {
@@ -3275,7 +3277,10 @@ export default function RichTextEditor({
             {/* Headings */}
             <select
               value={currentBlockFormat}
-              onMouseDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                saveSelection();
+              }}
               onChange={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -3308,15 +3313,19 @@ export default function RichTextEditor({
             {/* Font Size */}
             <select
               value={currentFontSize}
-              onMouseDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                saveSelection();
+              }}
               onChange={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 const size = e.target.value;
                 if (!size) return;
+                focus();
+                restoreSavedSelection();
                 applyFontSize(size);
                 setCurrentFontSize(size);
-                focus();
               }}
               className="rte-toolbar-select"
               style={{ width: '70px' }}
@@ -3481,15 +3490,19 @@ export default function RichTextEditor({
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                <select
                 value={currentLineHeight}
-                onMouseDown={(e) => e.stopPropagation()}
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  saveSelection();
+                }}
                 onChange={(e) => {
                   e.preventDefault();
                   const height = e.target.value;
                   if (height) {
+                    focus();
+                    restoreSavedSelection();
                     onLineHeightChange(height);
                     setCurrentLineHeight(height);
                   }
-                  focus();
                 }}
                 className="rte-toolbar-select"
                 style={{ width: '64px', paddingLeft: '24px' }}
